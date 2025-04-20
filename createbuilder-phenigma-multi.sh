@@ -58,15 +58,15 @@ FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; ## 2204 Needs tlc and DB up
 #
 
 #
-# Use shared source location? !! EXPERIMENTAL - NOT RECOMMENDED !!
+# Use shared source location? !! EXPERIMENTAL - NOT RECOMMENDED !! BUILD WILL FAIL !!
 # SHARED_SOURCE="yes"
 #
 
 #################################################################33
 
 [ -z "$FLAVOR" ] && FLAVOR="ubuntu"
-[ -z "$DISTRIBUTION" ] && DISTRIBUTION="trusty"
-[ -z "$ARCH" ] && ARCH="i386"
+[ -z "$DISTRIBUTION" ] && DISTRIBUTION="jammy"
+[ -z "$ARCH" ] && ARCH="amd64"
 
 COMMON_DIR_BASE="/usr/local/lmce"
 ROOT_OF_BUILDER="/opt/builder-$FLAVOR-$DISTRIBUTION-$ARCH"
@@ -113,7 +113,10 @@ case "${FLAVOR}" in
 esac
 
 # Create a common source dir
-#[[ "$SHARED_SOURCE" == "yes" ]] && mkdir -p "$COMMON_SRC_DIR"
+# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
+#[ "${SHARED_SOURCE}" == "yes" ] && mkdir -p "$COMMON_SRC_DIR"
+
+# Create source dir
 mkdir -p "$ROOT_OF_BUILDER/var/lmce-build/scm"
 
 # Create a common skins/media dir
@@ -128,7 +131,11 @@ apt-get -y install binfmt-support qemu-user-static debootstrap mysql-server
 # Setup the new debootstrap environment
 mkdir -p "$ROOT_OF_BUILDER"
 
-qemu-debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
+# debootstrap was not arch aware on old builders < 2204 (jammy)
+#qemu-debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
+
+# debootstrap is arch aware now >= 2204 (jammy)
+debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
 
 # prepare the fstab to contain required mount information for the builder
 cat <<-EOF >>/etc/fstab
@@ -143,7 +150,8 @@ cat <<-EOF >>/etc/fstab
 	$COMMON_SKINS_AND_MEDIA_DIR  $ROOT_OF_BUILDER/home/samba/www_docs 	none bind
 	EOF
 
-#[[ "$SHARED_SOURCE" == "yes" ]] && echo "$COMMON_SRC_DIR  $ROOT_OF_BUILDER/var/lmce-build/scm 		none bind" >> /etc/fstab
+# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
+#[ "${SHARED_SOURCE}" == "yes" ] && echo "$COMMON_SRC_DIR  $ROOT_OF_BUILDER/var/lmce-build/scm 		none bind" >> /etc/fstab
 
 # mount the required dirs for the builder
 mount $ROOT_OF_BUILDER/dev
@@ -155,7 +163,8 @@ mkdir -p $ROOT_OF_BUILDER/run/mysqld
 mount $ROOT_OF_BUILDER/run/mysqld
 
 mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
-mount $ROOT_OF_BUILDER/var/lmce-build/scm
+# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
+#[ "${SHARED_SOURCE}" = "yes" ] && mount $ROOT_OF_BUILDER/var/lmce-build/scm
 
 mkdir -p $ROOT_OF_BUILDER/home/samba/www_docs
 mount $ROOT_OF_BUILDER/home/samba/www_docs
@@ -186,14 +195,14 @@ esac
 
 BASE_PACKAGES="aptitude openssh-client mysql-client git lsb-release"
 
-case "$FLAVOR" in
+case "${FLAVOR}" in
         "ubuntu")
 	BASE_PACKAGES+=" language-pack-en-base"
 	CONF_FILES_DIR="/conf-files/$DISTRIBUTION-$ARCH/"
 ### source builds for all releases at the moment, this is unnecessary
 #	case "$DISTRIBUTION" in
 #		"precise")
-			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
+#			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
 #			;;
 #		"trusty")
 #			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
@@ -205,11 +214,13 @@ case "$FLAVOR" in
 #			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
 #			;;
 #	esac
+	GIT="https://github.com/linuxmce/buildscripts.git"
         ;;
         "raspbian")
 		BASE_PACKAGES+=
 	        CONF_FILES_DIR="/conf-files/raspbian-$DISTRIBUTION-$ARCH/"
-		GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
+		#GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
+		GIT="https://github.com/linuxmce/buildscripts.git"
         ;;
 esac
 
@@ -278,7 +289,7 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 
 
 	# Generate ssh key for builder if !exist
-	if [[ ! -f /etc/lmce-build/builder.key ]] ;then
+	if [ ! -f "/etc/lmce-build/builder.key" ]; then
 	        echo "Generating SSH Key for this host : /etc/lmce-build/builder.key"
 	        ssh-keygen -N '' -C "LinuxMCE Builder \$Flavor \$Distro \$Arch" -f /etc/lmce-build/builder.key
 	else
