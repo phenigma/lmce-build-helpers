@@ -162,8 +162,8 @@ mount $ROOT_OF_BUILDER/dev/pts
 mkdir -p $ROOT_OF_BUILDER/run/mysqld
 mount $ROOT_OF_BUILDER/run/mysqld
 
-mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
 # Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
+#[ "${SHARED_SOURCE}" = "yes" ] && mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
 #[ "${SHARED_SOURCE}" = "yes" ] && mount $ROOT_OF_BUILDER/var/lmce-build/scm
 
 mkdir -p $ROOT_OF_BUILDER/home/samba/www_docs
