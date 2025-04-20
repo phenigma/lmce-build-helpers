@@ -49,6 +49,8 @@ bind I login on
 bind O login off
 bind } history
 
+caption     always        "%{+b rk}%H%{gk} |%c %{yk}%d.%m.%Y | %w | %72=Load: %l %{wk}"
+
 # An example of a "screen scraper" which will launch urlview on the current
 # screen window
 #
