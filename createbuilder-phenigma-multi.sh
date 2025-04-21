@@ -343,6 +343,14 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	arch="$ARCH"
 
 	NUM_CORES=`nproc`
+
+	no_clean_scm="true"
+	cache_replacements="true"
+
+	# This must run at least once, then uncomment unless the DB changes.
+	#DB_IMPORT="no"
+
+	git_branch_name="master"
 	EOF
 
 
