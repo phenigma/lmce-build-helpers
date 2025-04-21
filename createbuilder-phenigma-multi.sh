@@ -234,15 +234,15 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	set -x
 
 	# prevent services from starting in chroot
-	dpkg-divert --local --add /sbin/systemctl
+	dpkg-divert --local --no-rename --add /sbin/systemctl
 	rm -f /sbin/systemctl
 	ln -s /bin/true /sbin/systemctl
 
-	dpkg-divert --local --add /sbin/initctl
+	dpkg-divert --local --no-rename --add /sbin/initctl
 	rm -f /sbin/initctl
 	ln -s /bin/true /sbin/initctl
 
-	dpkg-divert --local --add /usr/sbin/invoke-rc.d
+	dpkg-divert --local --no-rename --add /usr/sbin/invoke-rc.d
 	rm -f /usr/sbin/invoke-rc.d
 	ln -s /bin/true /usr/sbin/invoke-rc.d
 
@@ -342,14 +342,23 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	build_name="$DISTRIBUTION"
 	arch="$ARCH"
 
+	# set the number of cores to use based on detected cpu cores.
 	NUM_CORES=`nproc`
 
+	# Don't clean the source tree between builds. Runs git pull to update source instead of fresh clone.
 	no_clean_scm="true"
+
+	# Cache build-replacements, only build if the source has changed. Note: Not all replacements are chached.
+	# remove the file $.../.cache to remove the cache memory and rebuild all replacements.
 	cache_replacements="true"
 
-	# This must run at least once, then uncomment unless the DB changes.
+	# Skip DB dump and import. This must run at least once, then uncomment unless the DB changes.
 	#DB_IMPORT="no"
 
+	# Skip DB dump, but still import existing .prep files. This must run at least once, then uncomment unless the DB changes.
+	#IMPORT_BUILD_DB_ONLY="true"
+
+	# The git branch to checkout after a pull or clone. This is the branch that will build.
 	git_branch_name="master"
 	EOF
 
