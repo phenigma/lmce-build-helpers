@@ -352,10 +352,10 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	# remove the file $.../.cache to remove the cache memory and rebuild all replacements.
 	cache_replacements="true"
 
-	# Skip DB dump and import. This must run at least once, then uncomment unless the DB changes.
+	# Skip DB dump and import. Enable this if any databases have changed. This will prevent ALL DB dump and import, including the pluto_main_build database.
 	#DB_IMPORT="no"
 
-	# Skip DB dump, but still import existing .prep files. This must run at least once, then uncomment unless the DB changes.
+	# Only DB dump and import the pluto_main_build database. Enable this if the build database changed but no other databases have changes.
 	#IMPORT_BUILD_DB_ONLY="true"
 
 	# The git branch to checkout after a pull or clone. This is the branch that will build.
