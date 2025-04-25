@@ -33,7 +33,7 @@ BRANCH=master
 # FLAVOR="raspbian"; DISTRIBUTION="wheezy"; ARCH="armhf";
 # FLAVOR="raspbian"; DISTRIBUTION="jessie"; ARCH="armhf";
 # FLAVOR="raspbian"; DISTRIBUTION="stretch"; ARCH="armhf";
-# FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf";
+FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf";
 
 # ### Debian Builds ###
 # FLAVOR="debian"; DISTRIBUTION="bookworm"; ARCH="amd64"; ## Not implemented
@@ -53,7 +53,7 @@ BRANCH=master
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="i386";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="amd64";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="armhf";
-FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; ## 2204 Needs tlc and DB updates
+#FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; ## 2204 Needs tlc and DB updates
 # FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="armhf"; ## 2204 Needs tlc and DB updates
 
 # FLAVOR="ubuntu"; DISTRIBUTION="noble"; ARCH="amd64"; ## 2404 Needs tlc and DB updates
@@ -203,11 +203,11 @@ esac
 
 [ ! -z "$PROXY" ] && echo 'Acquire::http { Proxy "'$PROXY'"; };' > $ROOT_OF_BUILDER/etc/apt/apt.conf.d/02proxy
 
-BASE_PACKAGES="aptitude openssh-client mysql-client git lsb-release nano joe curl wget"
+BASE_PACKAGES="aptitude openssh-client git lsb-release nano joe curl wget"
 
 case "${FLAVOR}" in
         "ubuntu")
-	BASE_PACKAGES+=" language-pack-en-base"
+	BASE_PACKAGES+=" language-pack-en-base mysql-client"
 	CONF_FILES_DIR="/conf-files/$DISTRIBUTION-$ARCH/"
 ### source builds for all releases at the moment, this is unnecessary
 #	case "$DISTRIBUTION" in
@@ -227,7 +227,7 @@ case "${FLAVOR}" in
 	GIT="https://github.com/linuxmce/buildscripts.git"
         ;;
         "raspbian")
-		BASE_PACKAGES+=
+		BASE_PACKAGES+=" mariadb-client-10.0"
 	        CONF_FILES_DIR="/conf-files/raspbian-$DISTRIBUTION-$ARCH/"
 		#GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
 		GIT="https://github.com/linuxmce/buildscripts.git"
@@ -389,6 +389,9 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	# Cache build-replacements, only build if the source has changed. Note: Not all replacements are chached.
 	# remove the file $/var/lmce-build/replacements/.cache to remove the cache memory and rebuild all replacements.
 	cache_replacements="true"
+
+	# Uncomment to disable packaging "_all" .debs (avwiz sounds, install wizard videos, etc.)
+	#BUILD_ALL_PKGS="no"
 
 	# Skip DB dump and import. Disable this if any databases have changed. Enabling will prevent ALL DB dump and import, including the pluto_main_build database.
 	#DB_IMPORT="no"
