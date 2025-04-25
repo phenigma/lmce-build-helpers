@@ -26,6 +26,9 @@ PROXY="http://192.168.2.60:3142/"
 # default options are shown.  Uncomment one of the
 # following lines to set the options accordingly.
 #
+# Set the default git branch to checkout/build.
+BRANCH=master
+#
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
 # FLAVOR="raspbian"; DISTRIBUTION="wheezy"; ARCH="armhf";
 # FLAVOR="raspbian"; DISTRIBUTION="jessie"; ARCH="armhf";
@@ -36,7 +39,7 @@ PROXY="http://192.168.2.60:3142/"
 # FLAVOR="debian"; DISTRIBUTION="bookworm"; ARCH="amd64"; ## Not implemented
 # FLAVOR="debian"; DISTRIBUTION="bookworm"; ARCH="armhf"; ## Not implemented
 
-### Ubuntu Builds ###
+# ## Ubuntu Builds ###
 # FLAVOR="ubuntu"; DISTRIBUTION="intrepid"; ARCH="i386";
 # FLAVOR="ubuntu"; DISTRIBUTION="lucid"; ARCH="i386";
 # FLAVOR="ubuntu"; DISTRIBUTION="precise"; ARCH="i386";
@@ -116,8 +119,8 @@ esac
 # Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
 #[ "${SHARED_SOURCE}" == "yes" ] && mkdir -p "$COMMON_SRC_DIR"
 
-# Create source dir
-mkdir -p "$ROOT_OF_BUILDER/var/lmce-build/scm"
+# Create source dir - common source testing - WILL BREAK BUILD!!
+#mkdir -p "$ROOT_OF_BUILDER/var/lmce-build/scm"
 
 # Create a common skins/media dir
 mkdir -p "$COMMON_SKINS_AND_MEDIA_DIR"
@@ -126,7 +129,7 @@ mkdir -p "$ROOT_OF_BUILDER/home/samba/www_docs"
 # Get the needed packages including debootstrap
 # Ubuntu 2310 removes the qemu meta package, qemu-user-static is all that *should* be necessary here
 # apt-get -y install binfmt-support qemu qemu-user-static debootstrap mysql-server
-apt-get -y install binfmt-support qemu-user-static debootstrap mysql-server
+DEBIAN_FRONTEND=noninteractive apt-get -y install binfmt-support qemu-user-static debootstrap mysql-server
 
 # Setup the new debootstrap environment
 mkdir -p "$ROOT_OF_BUILDER"
@@ -140,7 +143,7 @@ debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
 # prepare the fstab to contain required mount information for the builder
 cat <<-EOF >>/etc/fstab
 	# new builder at $ROOT_OF_BUILDER
-	/etc/resolv.conf $ROOT_OF_BUILDER/etc/resolv.conf none bind 0 0
+	/etc/resolv.conf $ROOT_OF_BUILDER/etc/resolv.conf 		none bind 0 0
 	/dev            $ROOT_OF_BUILDER/dev				none    bind
 	none            $ROOT_OF_BUILDER/proc         			proc
 	none            $ROOT_OF_BUILDER/sys            		sysfs
@@ -148,6 +151,8 @@ cat <<-EOF >>/etc/fstab
 	#/var/run/mysqld $ROOT_OF_BUILDER/var/run/mysqld			none	bind
 	/run/mysqld $ROOT_OF_BUILDER/run/mysqld				none	bind
 	$COMMON_SKINS_AND_MEDIA_DIR  $ROOT_OF_BUILDER/home/samba/www_docs 	none bind
+	/mnt2		$ROOT_OF_BUILDER/mnt2				none    bind
+
 	EOF
 
 # Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
@@ -161,6 +166,9 @@ mount $ROOT_OF_BUILDER/dev/pts
 
 mkdir -p $ROOT_OF_BUILDER/run/mysqld
 mount $ROOT_OF_BUILDER/run/mysqld
+
+mkdir -p $ROOT_OF_BUILDER/mnt2
+mount $ROOT_OF_BUILDER/mnt2
 
 # Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
 #[ "${SHARED_SOURCE}" = "yes" ] && mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
@@ -180,6 +188,8 @@ case "${FLAVOR}" in
 			deb-src $MIRROR $DISTRIBUTION-updates  main restricted universe
 			deb     $SECURITY_ADDRESS $DISTRIBUTION-security  main restricted universe
 			deb-src $SECURITY_ADDRESS $DISTRIBUTION-security  main restricted universe
+			#deb     $MIRROR $DISTRIBUTION-backports  main restricted universe multiverse
+
 			EOF
 		;;
 	"raspbian")
@@ -193,7 +203,7 @@ esac
 
 [ ! -z "$PROXY" ] && echo 'Acquire::http { Proxy "'$PROXY'"; };' > $ROOT_OF_BUILDER/etc/apt/apt.conf.d/02proxy
 
-BASE_PACKAGES="aptitude openssh-client mysql-client git lsb-release"
+BASE_PACKAGES="aptitude openssh-client mysql-client git lsb-release nano joe curl wget"
 
 case "${FLAVOR}" in
         "ubuntu")
@@ -224,7 +234,6 @@ case "${FLAVOR}" in
         ;;
 esac
 
-
 # Create a script containing the initial steps needed for the builder
 cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	#!/bin/bash
@@ -233,16 +242,34 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	set -e
 	set -x
 
+	# Function to check if a specific option is supported by dpkg-divert
+	supports_option() {
+	    dpkg-divert --help 2>&1 | grep -q -- "\$1"
+	}
+
+	# Check for support
+	if supports_option "--rename" && supports_option "--no-rename"; then
+	    echo "dpkg-divert supports --rename and --no-rename"
+	    RENAME_OPTION="--rename"
+	    NO_RENAME_OPTION="--no-rename"
+	else
+	    echo "dpkg-divert does NOT support --rename and --no-rename"
+	    RENAME_OPTION=""
+	    NO_RENAME_OPTION=""
+	fi
+	echo "Using options: \$RENAME_OPTION"
+	# dpkg-divert $RENAME_OPTION --add /path/to/file
+
 	# prevent services from starting in chroot
-	dpkg-divert --local --no-rename --add /sbin/systemctl
+	dpkg-divert --local \$RENAME_OPTION --add /sbin/systemctl
 	rm -f /sbin/systemctl
 	ln -s /bin/true /sbin/systemctl
 
-	dpkg-divert --local --no-rename --add /sbin/initctl
+	dpkg-divert --local \$RENAME_OPTION --add /sbin/initctl
 	rm -f /sbin/initctl
 	ln -s /bin/true /sbin/initctl
 
-	dpkg-divert --local --no-rename --add /usr/sbin/invoke-rc.d
+	dpkg-divert --local \$RENAME_OPTION --add /usr/sbin/invoke-rc.d
 	rm -f /usr/sbin/invoke-rc.d
 	ln -s /bin/true /usr/sbin/invoke-rc.d
 
@@ -251,14 +278,34 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 
 	# TODO: add code to get the repo keys
 
+	# Update the system
+	export DEBIAN_FRONTEND=noninteractive
 	apt-get update
 	apt-get -y dist-upgrade
+
 	# Install base packages required.
 	apt-get -y install $BASE_PACKAGES
 
+	# Add the git-lfs repository and get git-lfs
+        if [ "$DISTRIBUTION" = "trusty" ] && [ "$ARCH" = "armhf" ]; then
+		# Special conditions for trusty-armhf, get it direct from the releases
+		mkdir -p /root/git-lfs
+		pushd /root/git-lfs
+		wget https://github.com/git-lfs/git-lfs/releases/download/v2.12.1/git-lfs-linux-arm-v2.12.1.tar.gz
+		tar -xvf git-lfs-linux-arm-v2.12.1.tar.gz
+		./install.sh
+		popd
+	else
+		# Add the packagecloud repository to apt sources.
+		# curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
+		curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+		apt-get -y install git-lfs
+	fi
+
 	# Make sure mysql is not using the networking (thanks Zaerc)
 	# and make sure the innodb_flush_log settings are ok.
-	sed 's/^[^#]*bind-address[[:space:]]*=.*$/#&\nskip-networking\ninnodb_flush_log_at_trx_commit = 2/' -i /etc/mysql/my.cnf
+	sed 's/^[^#]*bind-address[[:space:]]*=.*$/#&\nskip-networking\ninnodb_flush_log_at_trx_commit = 2/' -i /etc/mysql/my.cnf | true
+	sed 's/^[^#]*bind-address[[:space:]]*=.*$/#&\nskip-networking\ninnodb_flush_log_at_trx_commit = 2/' -i /etc/mysql/mysql.conf.d/mysqld.cnf | true
 	cd /root
 	git clone "$GIT"
 	ln -s buildscripts Ubuntu_Helpers_NoHardcode
@@ -296,27 +343,11 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	        echo "SSH Key found on this host : /etc/lmce-build/builder.key"
 	fi
 
-	# Need a >1.7 subversion for all distros
-	case "\$Flavor" in
-		"ubuntu")
-			ppa_distro="\$Distro"
-			case "\$Distro" in
-				"trusty")
-					apt-get install git
-					;;
-				*)
-					apt-get -y install git
-					;;
-			esac
-			;;
-		"raspbian")
-			apt-get -y install git
-			;;
-	esac
+	# remove mysql-server from build-packages - requires shared database!!
+	sed -i '/mysql-server/d' /etc/lmce-build/build-packages || :
 	EOF
 chmod +x $ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 chroot $ROOT_OF_BUILDER /root/initialBuilderSetup.sh
-
 
 # Create initial configuration for the builder
 cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/builder.custom.conf
@@ -338,9 +369,16 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	[ ! -z "\$MEDIA_HOST" ] && http_media_host="\$MEDIA_HOST"
 	[ ! -z "\$PROXY" ] && export http_proxy="\$PROXY"
 
+	# OS flavor (ubuntu/debian/raspbian)
 	flavor="$FLAVOR"
+
+	# release (trusty/buster/wheezy)
 	build_name="$DISTRIBUTION"
+
 	arch="$ARCH"
+
+	# The git branch to checkout after a pull or clone. This is the branch that will build.
+	git_branch_name="$BRANCH"
 
 	# set the number of cores to use based on detected cpu cores.
 	NUM_CORES=`nproc`
@@ -349,19 +387,15 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	no_clean_scm="true"
 
 	# Cache build-replacements, only build if the source has changed. Note: Not all replacements are chached.
-	# remove the file $.../.cache to remove the cache memory and rebuild all replacements.
+	# remove the file $/var/lmce-build/replacements/.cache to remove the cache memory and rebuild all replacements.
 	cache_replacements="true"
 
-	# Skip DB dump and import. Enable this if any databases have changed. This will prevent ALL DB dump and import, including the pluto_main_build database.
+	# Skip DB dump and import. Disable this if any databases have changed. Enabling will prevent ALL DB dump and import, including the pluto_main_build database.
 	#DB_IMPORT="no"
 
 	# Only DB dump and import the pluto_main_build database. Enable this if the build database changed but no other databases have changes.
 	#IMPORT_BUILD_DB_ONLY="true"
-
-	# The git branch to checkout after a pull or clone. This is the branch that will build.
-	git_branch_name="master"
 	EOF
-
 
 echo "The preparations for the builder have been completed.
 
@@ -369,7 +403,7 @@ To use your builder, start mysql server, chroot into $ROOT_OF_BUILDER, prepare y
 and build your build.
 
 mount -a
-service mysql start
+#service mysql start
 LC_ALL=C chroot $ROOT_OF_BUILDER
 cd /usr/local/lmce-build
 ./prepare.sh
