@@ -33,7 +33,7 @@ BRANCH=master
 # FLAVOR="raspbian"; DISTRIBUTION="wheezy"; ARCH="armhf";
 # FLAVOR="raspbian"; DISTRIBUTION="jessie"; ARCH="armhf";
 # FLAVOR="raspbian"; DISTRIBUTION="stretch"; ARCH="armhf";
-FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf";
+# FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf";
 
 # ### Debian Builds ###
 # FLAVOR="debian"; DISTRIBUTION="bookworm"; ARCH="amd64"; ## Not implemented
@@ -53,7 +53,7 @@ FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="i386";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="amd64";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="armhf";
-#FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; ## 2204 Needs tlc and DB updates
+# FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; ## 2204 Needs tlc and DB updates
 # FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="armhf"; ## 2204 Needs tlc and DB updates
 
 # FLAVOR="ubuntu"; DISTRIBUTION="noble"; ARCH="amd64"; ## 2404 Needs tlc and DB updates
@@ -126,6 +126,12 @@ esac
 mkdir -p "$COMMON_SKINS_AND_MEDIA_DIR"
 mkdir -p "$ROOT_OF_BUILDER/home/samba/www_docs"
 
+mkdir -p /etc/mysql/mysql.conf.d/
+cat <<-EOF >/etc/mysql/mysql.conf.d/native_pwd.cnf
+	[mysqld]
+	default-authentication-plugin=mysql_native_password
+	EOF
+
 # Get the needed packages including debootstrap
 # Ubuntu 2310 removes the qemu meta package, qemu-user-static is all that *should* be necessary here
 # apt-get -y install binfmt-support qemu qemu-user-static debootstrap mysql-server
@@ -142,6 +148,7 @@ debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
 
 # prepare the fstab to contain required mount information for the builder
 cat <<-EOF >>/etc/fstab
+
 	# new builder at $ROOT_OF_BUILDER
 	/etc/resolv.conf $ROOT_OF_BUILDER/etc/resolv.conf 		none bind 0 0
 	/dev            $ROOT_OF_BUILDER/dev				none    bind
@@ -151,8 +158,6 @@ cat <<-EOF >>/etc/fstab
 	#/var/run/mysqld $ROOT_OF_BUILDER/var/run/mysqld			none	bind
 	/run/mysqld $ROOT_OF_BUILDER/run/mysqld				none	bind
 	$COMMON_SKINS_AND_MEDIA_DIR  $ROOT_OF_BUILDER/home/samba/www_docs 	none bind
-	/mnt2		$ROOT_OF_BUILDER/mnt2				none    bind
-
 	EOF
 
 # Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
@@ -167,8 +172,12 @@ mount $ROOT_OF_BUILDER/dev/pts
 mkdir -p $ROOT_OF_BUILDER/run/mysqld
 mount $ROOT_OF_BUILDER/run/mysqld
 
+# Add shared mount point to the fstab for this builder
+cat <<-EOF >>/etc/fstab
+	#/mnt2		$ROOT_OF_BUILDER/mnt2				none    bind
+	EOF
 mkdir -p $ROOT_OF_BUILDER/mnt2
-mount $ROOT_OF_BUILDER/mnt2
+#mount $ROOT_OF_BUILDER/mnt2
 
 # Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
 #[ "${SHARED_SOURCE}" = "yes" ] && mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
@@ -195,8 +204,9 @@ case "${FLAVOR}" in
 	"raspbian")
 		cat <<-EOF >$ROOT_OF_BUILDER/etc/apt/sources.list
 			# Required Sources for the builder
-			deb     $MIRROR $DISTRIBUTION  main contrib non-free
+			deb     $MIRROR $DISTRIBUTION  main contrib non-free rpi
 			deb-src $MIRROR $DISTRIBUTION  main contrib non-free
+			deb http://archive.raspberrypi.org/debian/ $DISTRIBUTION main ui
 			EOF
 		;;
 esac
@@ -286,9 +296,10 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	# Install base packages required.
 	apt-get -y install $BASE_PACKAGES
 
+	## TODO: move git-lfs stuff to prepare-scripts
 	# Add the git-lfs repository and get git-lfs
-        if [ "$DISTRIBUTION" = "trusty" ] && [ "$ARCH" = "armhf" ]; then
-		# Special conditions for trusty-armhf, get it direct from the releases
+        if [ "$DISTRIBUTION" = "trusty" ]; then
+		# Special conditions for trusty, get it direct from the releases
 		mkdir -p /root/git-lfs
 		pushd /root/git-lfs
 		wget https://github.com/git-lfs/git-lfs/releases/download/v2.12.1/git-lfs-linux-arm-v2.12.1.tar.gz
@@ -296,9 +307,9 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 		./install.sh
 		popd
 	else
-		# Add the packagecloud repository to apt sources.
+		# Add the packagecloud repository to apt sources. - Ew, causing issues. :(
 		# curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
-		curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+		# curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
 		apt-get -y install git-lfs
 	fi
 
@@ -391,10 +402,10 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/buil
 	cache_replacements="true"
 
 	# Uncomment to disable packaging "_all" .debs (avwiz sounds, install wizard videos, etc.)
-	#BUILD_ALL_PKGS="no"
+	BUILD_ALL_PKGS="no"
 
 	# Skip DB dump and import. Disable this if any databases have changed. Enabling will prevent ALL DB dump and import, including the pluto_main_build database.
-	#DB_IMPORT="no"
+	DB_IMPORT="no"
 
 	# Only DB dump and import the pluto_main_build database. Enable this if the build database changed but no other databases have changes.
 	#IMPORT_BUILD_DB_ONLY="true"
