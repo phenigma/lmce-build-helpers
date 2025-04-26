@@ -76,6 +76,11 @@ ROOT_OF_BUILDER="/opt/builder-$FLAVOR-$DISTRIBUTION-$ARCH"
 #COMMON_SRC_DIR="$COMMON_DIR_BASE/scm"
 COMMON_SKINS_AND_MEDIA_DIR="$COMMON_DIR_BASE/home/samba/www_docs"
 
+if [ -d "$ROOT_OF_BUILDER" ]; then
+    echo "Directory already exists. Exiting."
+    exit 1
+fi
+
 [ ! -z "$PROXY" ] && echo exporting http_proxy="$PROXY"
 [ ! -z "$PROXY" ] && export http_proxy="$PROXY"
 [ ! -z "$PROXY" ] && echo 'Acquire::http { Proxy "'$PROXY'"; };' > /etc/apt/apt.conf.d/02proxy
