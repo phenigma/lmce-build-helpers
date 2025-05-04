@@ -2,6 +2,7 @@
 set -e
 
 # Create mock directories for testing
+mkdir -p /tmp/mock-home/Ubuntu_Helpers_NoHardcode/.git
 mkdir -p /tmp/mock-home/LinuxMCE
 mkdir -p /tmp/mock-home/LinuxMCE-Addons
 mkdir -p /tmp/mock-home/mysql-data
@@ -11,7 +12,8 @@ export HOME="/tmp/mock-home"
 export PROJECT_NAME="lmce-test"
 export UBUNTU_VERSION="22.04"
 export PROJECT_DIR="/tmp/mock-output"
-export MYSQL_DIR="/tmp/mock-home/mysql-data"
+#export MYSQL_DIR="/tmp/mock-home/mysql-data"
+export MYSQL_RUN="/run/mysql"
 
 # Run the setup script with headless settings
 chmod +x ./linuxmce-docker-setup.sh

@@ -9,11 +9,90 @@
 set -e
 
 # Default config values
-UBUNTU_VERSION="22.04"
-PROJECT_NAME="linuxmce"
+OS="ubuntu"
+VERSION="jammy"
+ARCH="amd64"
 
-# Uncomment to use an apt-proxy
+# Set the default git branch to checkout/build.
+BRANCH="master"
+
+# Uncomment to use an apt-proxy inside the container
 APT_PROXY="http://192.168.2.60:3142"
+
+# Set the runtime dir for mysql inside the container if using myql on HOST to share the DB.
+MYSQL_RUN="/run/mysqld"
+
+# ## Ubuntu Builds ###
+# OS="ubuntu"; VERSION="trusty"; ARCH="amd64"; BRANCH="trusty";
+# OS="ubuntu"; VERSION="trusty"; ARCH="armhf"; BRANCH="trusty";
+# OS="ubuntu"; VERSION="xenial"; ARCH="amd64"; BRANCH="xenial";
+# OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="xenial";
+# OS="ubuntu"; VERSION="bionic"; ARCH="amd64"; BRANCH="$BRANCH";
+# OS="ubuntu"; VERSION="bionic"; ARCH="armhf"; BRANCH="$BRANCH";
+# OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="jammy"; ARCH="armhf"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented!!
+# OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented!!
+
+# ### RPI Builds - raspbian until buster, debian from bookworm on ###
+# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian"; #TODO: implement sources
+# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian";
+# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian";
+# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian";
+
+# ### Debian Builds ###
+# OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
+# OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
+
+# Parse command line arguments
+function print_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  --headless           Run in headless mode without user prompts"
+    echo "  --project-dir DIR    Set the project directory (default: $HOME/linuxmce-docker)"
+    echo "  --os NAME            Set the Operating System name (default: ubuntu)"
+    echo "  --version VER        Set OS version for Docker image (default: $VERSION)"
+    echo "  --arch ARCH          Set arch for Docker image (default: $ARCH)"
+    echo "  --help               Show this help message"
+    exit 1
+}
+
+# Parse command line options
+HEADLESS=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --headless)
+            HEADLESS=true
+            shift
+            ;;
+        --project-dir)
+            PROJECT_DIR="$2"
+            shift 2
+            ;;
+        --os)
+            OS="$2"
+            shift 2
+            ;;
+        --version)
+            VERSION="$2"
+            shift 2
+            ;;
+        --arch)
+            ARCH="$2"
+            shift 2
+            ;;
+        --help)
+            print_usage
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            print_usage
+            ;;
+    esac
+done
+
+PROJECT_NAME="linuxmce-$OS-$VERSION-$ARCH"
+[ -n "$SOURCES" ] && RESULT="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios
 
 # Print colored messages
 print_info() {
@@ -41,42 +120,18 @@ if [ ! -f /etc/debian_version ]; then
     exit 1
 fi
 
-# Parse command line arguments
-function print_usage() {
-    echo "Usage: $0 [OPTIONS]"
-    echo "Options:"
-    echo "  --headless           Run in headless mode without user prompts"
-    echo "  --project-dir DIR    Set the project directory (default: $HOME/linuxmce-docker)"
-    echo "  --ubuntu-version VER Set Ubuntu version for Docker image (default: $UBUNTU_VERSION)"
-    echo "  --help               Show this help message"
+if [[ -z "$ARCH" || -z "$OS" || -z "$VERSION" || -z "$BRANCH" ]]; then
+    echo "Usage: $0 <arch: amd64|i386|armhf> <os: ubuntu|debian> <version: bullseye|focal|...> <branch: master|trusty|...>"
     exit 1
-}
+fi
 
-# Parse command line options
-HEADLESS=false
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --headless)
-            HEADLESS=true
-            shift
-            ;;
-        --project-dir)
-            PROJECT_DIR="$2"
-            shift 2
-            ;;
-        --ubuntu-version)
-            UBUNTU_VERSION="$2"
-            shift 2
-            ;;
-        --help)
-            print_usage
-            ;;
-        *)
-            print_error "Unknown option: $1"
-            print_usage
-            ;;
-    esac
-done
+# Mapping for Docker image platforms
+case "$ARCH" in
+  amd64)  PLATFORM="linux/amd64";;
+  i386)   PLATFORM="linux/386";;
+  armhf)  PLATFORM="linux/arm/v7";;
+  *) echo "Unsupported architecture: $ARCH"; exit 1;;
+esac
 
 print_info "Starting LinuxMCE build environment setup..."
 
@@ -85,7 +140,7 @@ BUILDER_WORKDIR=${BUILDER_WORKDIR:-/var/lmce-build}
 BUILDER_BUILD_SCRIPTS=${BUILDER_BUILD_SCRIPTS:-/root/Ubuntu_Helpers_NoHardcode}
 
 # Project directory setup
-PROJECT_DIR=${PROJECT_DIR:-$HOME/linuxmce-docker}
+PROJECT_DIR=${PROJECT_DIR:-$HOME/$PROJECT_NAME}
 mkdir -p $PROJECT_DIR
 cd $PROJECT_DIR
 print_info "Project directory: $PROJECT_DIR"
@@ -117,7 +172,6 @@ fi
 check_and_install() {
 	local missing_pkgs=""
 
-	print_info "Checking for Docker packages..."
 	for pkg in "$@"; do
 		if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
 			missing_pkgs="$missing_pkgs $pkg"
@@ -125,14 +179,13 @@ check_and_install() {
 	done
 
 	if [ -n "$missing_pkgs" ]; then
-		print_info "Installing Docker packages..."
+		print_info "Installing packages..."
 		sudo apt-get update
 		sudo apt-get -y install $missing_pkgs
-	else
-		print_info "Docker packages already installed..."
 	fi
 }
 # Check for and install Docker packages
+print_info "Checking for Docker packages..."
 check_and_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Check if the current use is a member of the docker group, add to group if not
@@ -227,7 +280,12 @@ setup_mysql_mapping() {
         # In headless mode, don't map MySQL unless specified by environment variable
         if [ -n "$MYSQL_DIR" ] && [ -d "$MYSQL_DIR" ]; then
             mysql_mapping="      - $MYSQL_DIR:/var/lib/mysql:rw"
-            print_info "Mapping MySQL: $MYSQL_DIR -> /var/lib/mysql"
+            print_info "Mapping MySQL data: $MYSQL_DIR -> /var/lib/mysql"
+	else
+	    if [ -n "$MYSQL_RUN" ] && [ -d "$MYSQL_RUN" ]; then
+	        mysql_mapping="      - $MYSQL_RUN:/run/mysqld:rw"
+	        print_info "Mapping MySQL runtime: $MYSQL_RUN -> /run/mysqld"
+	    fi
         fi
     else
         # In interactive mode, ask if MySQL mapping is needed
@@ -261,7 +319,7 @@ if $HEADLESS; then
     fi
     
     # Setup MySQL mapping if env var is set
-    if [ -n "$MYSQL_DIR" ]; then
+    if [ -n "$MYSQL_DIR" ] || [ -n "$MYSQL_RUN" ]; then
         MYSQL_MAPPING=$(setup_mysql_mapping)
     fi
 else
@@ -298,7 +356,7 @@ fi
 # Create Dockerfile
 print_info "Creating Dockerfile..."
 cat > $PROJECT_DIR/Dockerfile << EOF
-FROM ubuntu:${UBUNTU_VERSION}
+FROM ${OS}:${VERSION}
 
 LABEL maintainer="LinuxMCE Community"
 LABEL description="LinuxMCE Build Environment"
@@ -398,7 +456,6 @@ skip-networking
 innodb_flush_log_at_trx_commit = 2
 EOF
 
-## FIXME: Add apt-proxy to docker env variables to avoid hardcode here. - phenigma
 ## Create apt proxy file
 print_info "Creating APT proxy file..."
 mkdir -p $PROJECT_DIR/configs/apt/
@@ -433,20 +490,20 @@ win32_create_fake="yes"
 # Point to the development sqlCVS server for 1004
 sqlcvs_host="schema.linuxmce.org"
 
-[ ! -z "\$SKIN_HOST" ] && http_skin_host="\$SKIN_HOST"
-[ ! -z "\$MEDIA_HOST" ] && http_media_host="\$MEDIA_HOST"
-[ ! -z "\$PROXY" ] && export http_proxy="\$PROXY"
+[ -n "\$SKIN_HOST" ] && http_skin_host="\$SKIN_HOST"
+[ -n "\$MEDIA_HOST" ] && http_media_host="\$MEDIA_HOST"
+[ -n "\$PROXY" ] && export http_proxy="\$PROXY"
 
 # OS flavor (ubuntu/debian/raspbian)
-flavor="ubuntu"
+flavor="$OS"
 
 # release (trusty/buster/wheezy)
-# build_name="jammy"
+build_name="$VERSION"
 
-arch="amd64"
+arch="$ARCH"
 
 # The git branch to checkout after a pull or clone. This is the branch that will build.
-git_branch_name="master"
+git_branch_name="$BRANCH"
 
 # set the number of cores to use based on detected cpu cores.
 NUM_CORES=\`nproc\`
@@ -509,8 +566,9 @@ print_info "Creating docker-compose.yml with mappings..."
   echo "    build:"
   echo "      context: ."
   echo "      dockerfile: Dockerfile"
-  echo "    image: ${PROJECT_NAME}:latest"
+  echo "    image: ${PROJECT_NAME}_image:latest"
   echo "    container_name: ${PROJECT_NAME}"
+  echo "    platform: $PLATFORM"
   echo "    volumes:"
   echo "      - ./lmce-build:$BUILDER_WORKDIR:rw"
   
@@ -526,7 +584,10 @@ print_info "Creating docker-compose.yml with mappings..."
   
   echo "    environment:"
   echo "      - BUILD_TYPE=release"
-  echo "      - UBUNTU_VERSION=${UBUNTU_VERSION}"
+  echo "      - OS=${OS}"
+  echo "      - VERSION=${VERSION}"
+  echo "      - ARCH=${ARCH}"
+  echo "      - SOURCES=${SOURCES}"
   echo "    command: shell"
   echo "    stdin_open: true"
   echo "    tty: true"
@@ -675,15 +736,18 @@ $0 [OPTIONS]
 
 Options:
 - \`--headless\`: Run in headless mode without user prompts
-- \`--project-dir DIR\`: Set the project directory (default: \$HOME/linuxmce-docker)
-- \`--ubuntu-version VER\`: Set Ubuntu version for Docker image (default: ${UBUNTU_VERSION})
+- \`--project-dir DIR\`: Set the project directory (default: \$HOME/$PROJECT_NAME)
+- \`--os NAME\`: Set the Operating System name (default: $OS)
+- \`--version VER\`: Set OS version for Docker image (default: $VERSION)
+- \`--arch ARCH\`: Set arch for Docker image (default: ${ARCH})
 - \`--help\`: Show help message
 
 ## Environment Variables
 
 In headless mode, you can use the following environment variables:
 - \`REPOS\`: Comma-separated list of repository paths to map
-- \`MYSQL_DIR\`: Path to MySQL data directory
+- \`MYSQL_DIR\`: Path to MySQL data directory (usually /var/lib/mysql)
+- \`MYSQL_RUN\`: Path to MySQL runtime dir (usually: /run/mysqld) [ MYSQL_DIR overrides MYSQL_RUN ]
 
 Example:
 \`\`\`bash
