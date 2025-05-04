@@ -382,6 +382,9 @@ RUN apt-get clean \\
     && rm -rf /var/lib/apt/lists/*
 RUN rm -f /etc/apt/apt.conf.d/02proxy
 
+# Ensure shells start in the correct dir. Necessary because the shell resolves symlinks.
+RUN echo 'cd -L /usr/local/lmce-build' >> /root/.bashrc
+
 # Default command if no arguments are provided
 CMD ["shell"]
 EOF
@@ -411,6 +414,7 @@ fi
 
 # Create builder configuration
 print_info "Creating builder configuration..."
+touch $PROJECT_DIR/configs/builder.custom.conf
 cat > $PROJECT_DIR/configs/builder.custom.conf << EOF
 # Build configuration for LinuxMCE
 # Generated on $(date)
