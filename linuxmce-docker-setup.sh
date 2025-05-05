@@ -36,14 +36,14 @@ MYSQL_RUN="/run/mysqld"
 # OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented
 
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
-# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; #TODO: implement $SOURCES
-# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian";
-# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian";
-# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian";
+# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
+# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
+# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
+# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
 
 # ### Debian Builds ###
 # OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
-# OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
+OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
 
 # Parse command line arguments
 function print_usage() {
@@ -160,8 +160,8 @@ print_info "Project directory: $PROJECT_DIR"
 print_info "Checking for Docker from official sources..."
 # Check for docker keyring, get it if it doesn't exist
 if [ ! -f "/etc/apt/keyrings/docker.asc" ] || [ ! -s "/etc/apt/keyrings/docker.asc" ]; then
-print_info "Installing Docker from official sources..."
-print_info "Installing Docker official source certificates in apt..."
+	print_info "Installing Docker from official sources..."
+	print_info "Installing Docker official source certificates in apt..."
 	sudo apt-get update
 	sudo apt-get install -y ca-certificates curl
 	sudo install -m 0755 -d /etc/apt/keyrings
@@ -380,6 +380,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN mkdir -p /etc/apt/apt.conf.d/
 COPY configs/apt/02proxy /etc/apt/apt.conf.d/
 
+RUN mkdir -p /etc/apt/sources.list.d/
+COPY configs/raspi/raspi.list /etc/apt/sources.list.d/
+
+RUN mkdir -p /usr/share/keyrings/
+COPY configs/raspi/raspberrypi-archive-keyring.gpg /usr/share/keyrings/raspberrypi-archive-keyring.gpg
+
 # Set locale
 RUN apt-get update && apt-get install -y locales && \\
     localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
@@ -479,6 +485,25 @@ Acquire {
 EOF
 fi
 
+add_raspi_repo() {
+    local version="$1"
+
+    local repo_url="http://archive.raspberrypi.org/debian/"
+    local repo_list="$PROJECT_DIR/configs/raspi/raspi.list"
+    local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
+    local keyring_path="$PROJECT_DIR/configs/raspi/raspberrypi-archive-keyring.gpg"
+    local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
+
+    print_info "Installing Raspberry Pi GPG key..."
+    curl -fsSL "$key_url" | gpg --dearmor | tee "$keyring_path" > /dev/null
+
+    print_info "Adding APT source for '$distro' with version '$version'..."
+    echo "deb [signed-by=$keyring_path_real] $repo_url $version main" | tee "$repo_list" > /dev/null
+}
+mkdir -p $PROJECT_DIR/configs/raspi
+touch $PROJECT_DIR/configs/raspi/raspi.list
+touch $PROJECT_DIR/configs/raspi/raspberrypi-archive-keyring.gpg
+[ -n "$SOURCES" ] && add_raspi_repo $VERSION
 
 # Create builder configuration
 print_info "Creating builder configuration..."
@@ -653,7 +678,7 @@ case "\$1" in
         docker compose exec \${CONTAINER_NAME} mysql-start
         ;;
     --prepare)
-        print_info "Running prepare scripts (this is done in --build)..."
+        print_info "Running prepare scripts..."
         docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/prepare.sh
         ;;
     --build-all)
