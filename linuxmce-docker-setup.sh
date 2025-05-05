@@ -60,6 +60,19 @@ function print_usage() {
     exit 1
 }
 
+# Print colored messages
+print_info() {
+    echo -e "\e[1;34m[INFO] $1\e[0m" >&2
+}
+
+print_success() {
+    echo -e "\e[1;32m[SUCCESS] $1\e[0m" >&2
+}
+
+print_error() {
+    echo -e "\e[1;31m[ERROR] $1\e[0m" >&2
+}
+
 # Parse command line options
 HEADLESS=true
 while [[ $# -gt 0 ]]; do
@@ -104,19 +117,6 @@ done
 
 PROJECT_NAME="linuxmce-$OS-$VERSION-$ARCH"
 [ -n "$SOURCES" ] && RESULT="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios
-
-# Print colored messages
-print_info() {
-    echo -e "\e[1;34m[INFO] $1\e[0m" >&2
-}
-
-print_success() {
-    echo -e "\e[1;32m[SUCCESS] $1\e[0m" >&2
-}
-
-print_error() {
-    echo -e "\e[1;31m[ERROR] $1\e[0m" >&2
-}
 
 # Check if running as root
 if [ "$(id -u)" -eq 0 ]; then
@@ -503,7 +503,7 @@ add_raspi_repo() {
 mkdir -p $PROJECT_DIR/configs/raspi
 touch $PROJECT_DIR/configs/raspi/raspi.list
 touch $PROJECT_DIR/configs/raspi/raspberrypi-archive-keyring.gpg
-[ -n "$SOURCES" ] && add_raspi_repo $VERSION
+#[ -n "$SOURCES" ] && add_raspi_repo $VERSION
 
 # Create builder configuration
 print_info "Creating builder configuration..."
@@ -848,9 +848,9 @@ ${PROJECT_DIR}/
 
 ## Additional Build Script Options
 
-These additional operations are available through the main run script (`run.sh`):
+These additional operations are available through the main run script (\`run.sh\`):
 
-- \`--prepare\`: Run LinuxMCE prepare scripts. Note: This setup is temporary and lost when the container is stopped. Use `--build` to bake it into the image.
+- \`--prepare\`: Run LinuxMCE prepare scripts. Note: This setup is temporary and lost when the container is stopped. Use \`--build\` to bake it into the image.
 - \`--build-full\`: Run the full build script for LinuxMCE inside the container.
 - \`--build-pkg\`: Run a LinuxMCE build using a supplied list of packages.
 - \`--build-replacements\`: Build only the Replacements set of LinuxMCE packages.
@@ -878,6 +878,7 @@ print_info "To initiate a build in the running container:"
 print_info "  ./run.sh --full-build"
 print_info ""
 print_info "To initiate a specific package build, include the package and package source numbers:"
-print_info "  ./run.sh --release-pkg ###,###"
+print_info "  ./run.sh --release-pkg \"###,###,###,###\""
 print_info ""
 print_info "For more information, see the README.md file in the project directory."
+
