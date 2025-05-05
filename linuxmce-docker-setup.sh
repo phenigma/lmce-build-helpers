@@ -22,23 +22,24 @@ APT_PROXY="http://192.168.2.60:3142"
 # Set the runtime dir for mysql inside the container if using myql on HOST to share the DB.
 MYSQL_RUN="/run/mysqld"
 
+# ## COMMON CONFIGURATIONS ##
 # ## Ubuntu Builds ###
-# OS="ubuntu"; VERSION="trusty"; ARCH="amd64"; BRANCH="trusty";
-# OS="ubuntu"; VERSION="trusty"; ARCH="armhf"; BRANCH="trusty";
-# OS="ubuntu"; VERSION="xenial"; ARCH="amd64"; BRANCH="xenial";
-# OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="xenial";
+# OS="ubuntu"; VERSION="trusty"; ARCH="amd64"; BRANCH="$BRANCH";
+# OS="ubuntu"; VERSION="trusty"; ARCH="armhf"; BRANCH="$BRANCH";
+# OS="ubuntu"; VERSION="xenial"; ARCH="amd64"; BRANCH="$BRANCH";
+# OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="bionic"; ARCH="amd64"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="bionic"; ARCH="armhf"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
 # OS="ubuntu"; VERSION="jammy"; ARCH="armhf"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented!!
-# OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented!!
+# OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
+# OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented
 
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
-# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian"; #TODO: implement sources
-# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian";
-# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian";
-# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="trusty"; SOURCES="raspbian";
+# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; #TODO: implement $SOURCES
+# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian";
+# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian";
+# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian";
 
 # ### Debian Builds ###
 # OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
@@ -48,21 +49,27 @@ MYSQL_RUN="/run/mysqld"
 function print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  --headless           Run in headless mode without user prompts"
+    echo "  --headless           Run in headless mode without user prompts (default)"
+    echo "  --interactive        Run in in interactive mode with user prompts for mounts (default)"
     echo "  --project-dir DIR    Set the project directory (default: $HOME/linuxmce-docker)"
     echo "  --os NAME            Set the Operating System name (default: ubuntu)"
     echo "  --version VER        Set OS version for Docker image (default: $VERSION)"
     echo "  --arch ARCH          Set arch for Docker image (default: $ARCH)"
+    echo "  --sources NAME       Add additional source locations (defult: N/A, optional: raspbian|rpios)"
     echo "  --help               Show this help message"
     exit 1
 }
 
 # Parse command line options
-HEADLESS=false
+HEADLESS=true
 while [[ $# -gt 0 ]]; do
     case $1 in
         --headless)
             HEADLESS=true
+            shift
+            ;;
+        --interactive)
+            HEADLESS=false
             shift
             ;;
         --project-dir)
@@ -79,6 +86,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --arch)
             ARCH="$2"
+            shift 2
+            ;;
+        --sources)
+            SOURCES="$2"
             shift 2
             ;;
         --help)
@@ -619,23 +630,6 @@ print_error() {
     echo -e "\e[1;31m[ERROR] \$1\e[0m"
 }
 
-# Print help message
-if [ "\$1" == "--help" ] || [ "\$1" == "-h" ]; then
-    echo "LinuxMCE Docker Run Script"
-    echo "Usage: \$0 [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  --build         Build the Docker image"
-    echo "  --start         Start the Docker container"
-    echo "  --stop          Stop the Docker container"
-    echo "  --shell         Open a shell in the running container"
-    echo "  --mysql-start   Start the MySQL service in the container"
-    echo "  --exec CMD      Execute a command in the running container"
-    echo "  --help          Show this help message"
-    echo ""
-    exit 0
-fi
-
 # Handle command line options
 case "\$1" in
     --build)
@@ -658,6 +652,26 @@ case "\$1" in
         print_info "Starting MySQL service in the container..."
         docker compose exec \${CONTAINER_NAME} mysql-start
         ;;
+    --prepare)
+        print_info "Running prepare scripts (this is done in --build)..."
+        docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/prepare.sh
+        ;;
+    --build-all)
+        print_info "Running a LinuxMCE full build..."
+        docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/build.sh
+        ;;
+    --build-pkg)
+        print_info "Running a LinuxMCE build from the supplied list of packages..."
+        docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/release-pkg.sh $2
+        ;;
+    --build-replacements)
+        print_info "Running a LinuxMCE build of Replacements only..."
+        docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/build-scripts/build-replacements.sh
+        ;;
+    --import-db)
+        print_info "Running a LinuxMCE database import..."
+        docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/build-scripts/import-databases.sh
+        ;;
     --exec)
         shift
         print_info "Executing command in Docker container: \$@"
@@ -674,6 +688,11 @@ case "\$1" in
         echo "  --stop          Stop the Docker container"
         echo "  --shell         Open a shell in the running container"
         echo "  --mysql-start   Start the MySQL service in the container"
+        echo "  --prepare       Run the LinuxMCE prepare scripts (/usr/local/lmce-build/prepare.sh) [not persistent, use --build instead for permanent setup]"
+        echo "  --build-full    Run a LinuxMCE full build scripts (/usr/local/lmce-build/build.sh)"
+        echo "  --build-pkg #,# Run a LinuxMCE build from list of pkgs (/usr/local/lmce-build/release-pkg.sh)"
+        echo "  --build-replace Run a LinuxMCE build of Replacements only (/usr/local/lmce-build/build-scripts/build-replacements.sh)"
+        echo "  --import-db     Run a LinuxMCE database import (/usr/local/lmce-build/build-scripts/import-databases.sh)"
         echo "  --exec CMD      Execute a command in the running container"
         echo "  --help          Show this help message"
         echo ""
@@ -716,14 +735,44 @@ This is a Docker-based build environment for LinuxMCE with repository and MySQL 
    ./run.sh --mysql-start
    \`\`\`
 
-5. Execute a command in the running container:
+5. Prepare the container (not persistent, use --build instead for permanent setup):
+   \`\`\`bash
+   ./run.sh --prepare
+   \`\`\`
+
+6. Perform a full LinuxMCE build:
+   \`\`\`bash
+   ./run.sh --build-all
+   \`\`\`
+
+7. Build selected packages (provide comma separated list of package numbers as arguments):
+   \`\`\`bash
+   ./run.sh --build-pkg "###,###,###,###"
+   \`\`\`
+
+8. Build only Replacement packagse:
+   \`\`\`bash
+   ./run.sh --build-replacements
+   \`\`\`
+
+9. Import LinuxMCE databases:
+   \`\`\`bash
+   ./run.sh --import-db
+   \`\`\`
+
+10. Execute a command in the running container:
    \`\`\`bash
    ./run.sh --exec <command>
    \`\`\`
 
-6. Stop the Docker container:
+11. Stop the Docker container:
    \`\`\`bash
    ./run.sh --stop
+   \`\`\`
+
+11. Display help:
+   \`\`\`bash
+   ./run.sh --help
    \`\`\`
 
 ## Setup Script Options
@@ -740,14 +789,15 @@ Options:
 - \`--os NAME\`: Set the Operating System name (default: $OS)
 - \`--version VER\`: Set OS version for Docker image (default: $VERSION)
 - \`--arch ARCH\`: Set arch for Docker image (default: ${ARCH})
+- \`--sources NAME\`: Specify additional sources to use (default: ${SOURCES}, options: raspbian|rpios)
 - \`--help\`: Show help message
 
 ## Environment Variables
 
 In headless mode, you can use the following environment variables:
 - \`REPOS\`: Comma-separated list of repository paths to map
-- \`MYSQL_DIR\`: Path to MySQL data directory (usually /var/lib/mysql)
-- \`MYSQL_RUN\`: Path to MySQL runtime dir (usually: /run/mysqld) [ MYSQL_DIR overrides MYSQL_RUN ]
+- \`MYSQL_DIR\`: Path to MySQL data directory (usually /var/lib/mysql) 
+- \`MYSQL_RUN\`: Path to MySQL runtime dir (usually: /run/mysqld) [ MYSQL_RUN is ignored if MYSQL_DIR is set ]
 
 Example:
 \`\`\`bash
@@ -767,15 +817,26 @@ ${PROJECT_DIR}/
 │       └── 02proxy
 │   └── mysql/             # MySQL configuration
 │       └── builder.cnf
+│   └── builder.custom.conf	# Custom LinuxMCE builder configuration file
 └── lmce-build/            # Build directory
 \`\`\`
+
+## Additional Build Script Options
+
+These additional operations are available through the main run script (`run.sh`):
+
+- \`--prepare\`: Run LinuxMCE prepare scripts. Note: This setup is temporary and lost when the container is stopped. Use `--build` to bake it into the image.
+- \`--build-full\`: Run the full build script for LinuxMCE inside the container.
+- \`--build-pkg\`: Run a LinuxMCE build using a supplied list of packages.
+- \`--build-replacements\`: Build only the Replacements set of LinuxMCE packages.
+- \`--import-db\`: Import LinuxMCE databases from the build scripts.
 EOF
 
 # Create build directory
 mkdir -p $PROJECT_DIR/lmce-build
 
 # Final steps
-print_success "Setup complete! Your LinuxMCE Docker environment is ready."
+print_success "Setup complete! Your LinuxMCE Docker build environment is ready."
 print_info "Project directory: $PROJECT_DIR"
 print_info ""
 print_info "To build the Docker image:"
@@ -787,5 +848,11 @@ print_info "  ./run.sh --start"
 print_info ""
 print_info "To open a shell in the running container:"
 print_info "  ./run.sh --shell"
+print_info ""
+print_info "To initiate a build in the running container:"
+print_info "  ./run.sh --full-build"
+print_info ""
+print_info "To initiate a specific package build, include the package and package source numbers:"
+print_info "  ./run.sh --release-pkg ###,###"
 print_info ""
 print_info "For more information, see the README.md file in the project directory."
