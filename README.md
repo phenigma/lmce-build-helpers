@@ -1,6 +1,7 @@
 # lmce-build-helpers
 
 # CONFIGURE GIT USER
+```bash
 # git config --global user.email "phenigma@hotmail.com"
 # git config --global user.name "phenigma"
 # CREATE SSH KEY
@@ -12,4 +13,4 @@
 # git fetch
 # git push -u origin --all
 # git push -u origin --tags
-
+```
