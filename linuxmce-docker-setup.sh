@@ -32,7 +32,7 @@ MYSQL_RUN="/run/mysqld"
 # OS="ubuntu"; VERSION="bionic"; ARCH="armhf"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
 # OS="ubuntu"; VERSION="jammy"; ARCH="armhf"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
+OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
 # OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented
 
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
@@ -43,7 +43,7 @@ MYSQL_RUN="/run/mysqld"
 
 # ### Debian Builds ###
 # OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
-OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
+# OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
 
 # Parse command line arguments
 function print_usage() {
@@ -116,7 +116,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 PROJECT_NAME="linuxmce-$OS-$VERSION-$ARCH"
-[ -n "$SOURCES" ] && RESULT="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios
+[ -n "$SOURCES" ] && PROJECT_NAME="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios
 
 # Check if running as root
 if [ "$(id -u)" -eq 0 ]; then
@@ -431,8 +431,10 @@ RUN mkdir -p $BUILDER_WORKDIR
 #WORKDIR /var/lmce-build
 
 
+### FIXME: This doesn't work because /var/lmce-build/... is not mounted during container creation. Need rethink on this.
+### FIXME: It will always git clone (which is ok but prevents shared build scripts)
 # If LinuxMCE build-scripts are available symlink them, if not then clone the git repo.
-RUN if [ -d "/var/lmce-build/Ubuntu_Helpers_NoHardcode" ]; then   ln -s /var/lmce-build/Ubuntu_Helpers_NoHardcode /root/Ubuntu_Helpers_NoHardcode; else   git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode; fi;
+RUN if [ -d "/var/lmce-build/Ubuntu_Helpers_NoHardcode" ]; then   ln -s /var/lmce-build/Ubuntu_Helpers_NoHardcode /root/Ubuntu_Helpers_NoHardcode; echo "HELPERS SYMLINK MADE"; else   git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode; echo "GIT CLONE MADE"; fi;
 
 # Install build helpers
 WORKDIR /root/Ubuntu_Helpers_NoHardcode
@@ -697,6 +699,14 @@ case "\$1" in
         print_info "Running a LinuxMCE database import..."
         docker compose exec \${CONTAINER_NAME} /usr/local/lmce-build/build-scripts/import-databases.sh
         ;;
+    --tail-log)
+        print_info "Tailing /var/log/lmce-build.log in ${CONTAINER_NAME}..."
+        docker compose exec ${CONTAINER_NAME} tail -f /var/log/lmce-build.log
+        ;;
+    --top)
+        print_info "Running top in ${CONTAINER_NAME}..."
+        docker compose exec ${CONTAINER_NAME} top
+        ;;
     --exec)
         shift
         print_info "Executing command in Docker container: \$@"
@@ -718,6 +728,8 @@ case "\$1" in
         echo "  --build-pkg #,# 	Run a LinuxMCE build from list of pkgs (/usr/local/lmce-build/release-pkg.sh)"
         echo "  --build-replacements	Run a LinuxMCE build of Replacements only (/usr/local/lmce-build/build-scripts/build-replacements.sh)"
         echo "  --import-db     	Run a LinuxMCE database import (/usr/local/lmce-build/build-scripts/import-databases.sh)"
+        echo "  --tail-log	     	Run tail -f on the build log (/var/log/lmce-build.log)"
+        echo "  --top		     	Run top in the container"
         echo "  --exec CMD      	Execute a command in the running container"
         echo "  --help          	Show this help message"
         echo ""
@@ -785,17 +797,27 @@ This is a Docker-based build environment for LinuxMCE with repository and MySQL 
    ./run.sh --import-db
    \`\`\`
 
-10. Execute a command in the running container:
+10. Follow (tail -f) the build log:
+   \`\`\`bash
+   ./run.sh --tail-log
+   \`\`\`
+
+11. Run top in the container:
+   \`\`\`bash
+   ./run.sh --top
+   \`\`\`
+
+12. Execute a command in the running container:
    \`\`\`bash
    ./run.sh --exec <command>
    \`\`\`
 
-11. Stop the Docker container:
+13. Stop the Docker container:
    \`\`\`bash
    ./run.sh --stop
    \`\`\`
 
-11. Display help:
+14. Display help:
    \`\`\`bash
    ./run.sh --help
    \`\`\`
@@ -875,7 +897,7 @@ print_info "To open a shell in the running container:"
 print_info "  ./run.sh --shell"
 print_info ""
 print_info "To initiate a build in the running container:"
-print_info "  ./run.sh --full-build"
+print_info "  ./run.sh --build-all"
 print_info ""
 print_info "To initiate a specific package build, include the package and package source numbers:"
 print_info "  ./run.sh --release-pkg \"###,###,###,###\""
