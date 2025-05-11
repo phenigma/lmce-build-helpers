@@ -8,6 +8,10 @@
 
 set -e
 
+# Get host UID/GID for setting user/group for host volume files.
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+
 # Default config values
 OS="ubuntu"
 VERSION="jammy"
@@ -30,9 +34,9 @@ MYSQL_RUN="/run/mysqld"
 # OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="bionic"; ARCH="amd64"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="bionic"; ARCH="armhf"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
+OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
 # OS="ubuntu"; VERSION="jammy"; ARCH="armhf"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
-OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
+# OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
 # OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented
 
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
@@ -45,6 +49,8 @@ OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
 # OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
 # OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
 
+
+###################### Feedback functions ######################
 # Parse command line arguments
 function print_usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -73,6 +79,7 @@ print_error() {
     echo -e "\e[1;31m[ERROR] $1\e[0m" >&2
 }
 
+###################### Check cmdline options ######################
 # Parse command line options
 HEADLESS=true
 while [[ $# -gt 0 ]]; do
@@ -115,9 +122,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+
+###################### Set project name ######################
 PROJECT_NAME="linuxmce-$OS-$VERSION-$ARCH"
 [ -n "$SOURCES" ] && PROJECT_NAME="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios
 
+###################### Check for root ######################
 # Check if running as root
 if [ "$(id -u)" -eq 0 ]; then
     print_error "Please do not run this script as root or with sudo."
@@ -125,17 +135,20 @@ if [ "$(id -u)" -eq 0 ]; then
     exit 1
 fi
 
+###################### Check for Debian ######################
 # Check for Debian
 if [ ! -f /etc/debian_version ]; then
     print_error "This script is designed for Debian systems only."
     exit 1
 fi
 
+###################### Check for required variables ######################
 if [[ -z "$ARCH" || -z "$OS" || -z "$VERSION" || -z "$BRANCH" ]]; then
     echo "Usage: $0 <arch: amd64|i386|armhf> <os: ubuntu|debian> <version: bullseye|focal|...> <branch: master|trusty|...>"
     exit 1
 fi
 
+###################### Docker Arch mappings ######################
 # Mapping for Docker image platforms
 case "$ARCH" in
   amd64)  PLATFORM="linux/amd64";;
@@ -144,6 +157,9 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH"; exit 1;;
 esac
 
+
+
+###################### Setup directories ######################
 print_info "Starting LinuxMCE build environment setup..."
 
 # Locations within the container
@@ -156,7 +172,14 @@ mkdir -p $PROJECT_DIR
 cd $PROJECT_DIR
 print_info "Project directory: $PROJECT_DIR"
 
+# Create build directory
+mkdir -p $PROJECT_DIR/lmce-build
+print_info "Project build directory: $PROJECT_DIR/lmce_build"
 
+
+
+
+###################### Get Docker on host ######################
 print_info "Checking for Docker from official sources..."
 # Check for docker keyring, get it if it doesn't exist
 if [ ! -f "/etc/apt/keyrings/docker.asc" ] || [ ! -s "/etc/apt/keyrings/docker.asc" ]; then
@@ -208,6 +231,9 @@ if ! id -nG "$USER" | grep -qw "docker"; then
 fi
 
 
+
+
+###################### Volume Mapping - sources & mysql ######################
 # Arrays to store repository mappings
 REPO_MAPPINGS_LIST=()
 
@@ -218,17 +244,17 @@ fi
 # Function to find repositories
 find_repositories() {
     print_info "Searching for LinuxMCE repositories in $HOME..."
-    
+
     # Arrays to store found repositories
     declare -a FOUND_REPOS=()
-    
+
     # Common repository names to search for
     REPO_NAMES=("LinuxMCE" "Ubuntu_Helpers_NoHardcode")
-    
+
     # Search for each repository
     for REPO_NAME in "${REPO_NAMES[@]}"; do
         FOUND_PATHS=$(find $HOME -type d -name "$REPO_NAME" -o -name "$REPO_NAME.git" 2>/dev/null)
-        
+
         # Add each found path to our array
         while IFS= read -r path; do
             if [ -n "$path" ]; then
@@ -239,7 +265,7 @@ find_repositories() {
             fi
         done <<< "$FOUND_PATHS"
     done
-    
+
     # Return the found repositories
     echo "${FOUND_REPOS[@]}"
 }
@@ -247,19 +273,21 @@ find_repositories() {
 # Function to setup repository mappings
 setup_repo_mappings() {
     local repos=("$@")
-    
+
     if [ ${#repos[@]} -eq 0 ]; then
         print_info "No repositories found in $HOME directory."
         return
     fi
-    
+
     for repo in "${repos[@]}"; do
         if [ -n "$repo" ]; then
             if $HEADLESS; then
                 # In headless mode, map all found repositories automatically
                 repo_name=$(basename "$repo")
-                REPO_MAPPINGS_LIST+=("      - $repo:$BUILDER_WORKDIR/$repo_name:rw")
-                print_info "Mapping: $repo -> $BUILDER_WORKDIR/$repo_name"
+                REPO_MAPPINGS_LIST+=("      - $repo:/root/$repo_name:rw")	# this will mount over (mask) the internal container initial checkout
+                print_info "Mapping: $repo -> /root/$repo_name"
+               	#REPO_MAPPINGS_LIST+=("      - $repo:$BUILDER_WORKDIR/$repo_name:rw")
+                #print_info "Mapping: $repo -> $BUILDER_WORKDIR/$repo_name"
             else
                 # In interactive mode, ask for confirmation
                 read -p "Map repository $repo to Docker? (y/n): " confirm
@@ -278,7 +306,7 @@ setup_repo_mappings() {
 add_repo_mapping() {
     local repo_path="$1"
     local target_path="$2"
-    
+
     REPO_MAPPINGS_LIST+=("      - $repo_path:$target_path:rw")
     print_info "Added mapping: $repo_path -> $target_path"
 }
@@ -286,7 +314,7 @@ add_repo_mapping() {
 # Function to setup MySQL mapping
 setup_mysql_mapping() {
     local mysql_mapping=""
-    
+
     if $HEADLESS; then
         # In headless mode, don't map MySQL unless specified by environment variable
         if [ -n "$MYSQL_DIR" ] && [ -d "$MYSQL_DIR" ]; then
@@ -299,7 +327,7 @@ setup_mysql_mapping() {
 	    fi
         fi
     else
-        # In interactive mode, ask if MySQL mapping is needed
+        # In interactive mode, ask if MySQL data directory mapping is needed
         read -p "Do you have MySQL data that needs to be mapped to Docker? (y/n): " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             read -p "Enter path to MySQL data directory: " mysql_dir
@@ -309,14 +337,25 @@ setup_mysql_mapping() {
             else
                 print_error "Directory $mysql_dir does not exist. MySQL mapping not added."
             fi
+        else
+            # In interactive mode, ask if MySQL runtime directory mapping is needed
+            read -p "Do you have MySQL runtime directory to be mapped to Docker? (y/n): " confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                read -p "Enter path to MySQL runtime directory: " mysql_run
+                if [ -d "$mysql_run" ]; then
+                    mysql_mapping="      - $mysql_run:/run/mysqld:rw"
+                    print_info "Added MySQL runtime mapping: $mysql_run -> /run/mysqld"
+                else
+                    print_error "Directory $mysql_run does not exist. MySQL mapping not added."
+                fi
+            fi
         fi
     fi
-    
     # Return the MySQL mapping
     echo -e "$mysql_mapping"
 }
 
-# Main logic
+# Main logic for locating/setting up mappings to host repositories (source dirs)
 if $HEADLESS; then
     # Headless mode - use environment variables or defaults
     if [ -z "$REPOS" ]; then
@@ -328,20 +367,20 @@ if $HEADLESS; then
         IFS=',' read -ra repo_list <<< "$REPOS"
         setup_repo_mappings "${repo_list[@]}"
     fi
-    
+
     # Setup MySQL mapping if env var is set
     if [ -n "$MYSQL_DIR" ] || [ -n "$MYSQL_RUN" ]; then
         MYSQL_MAPPING=$(setup_mysql_mapping)
     fi
 else
-    # Interactive mode
+    # Interactive mode - query the user
     print_info "Welcome to the LinuxMCE Docker Setup Script"
     print_info "This script will set up a Docker environment for LinuxMCE development."
-    
+
     # Find and map repositories
     mapfile -t found_repos < <(find_repositories)
     setup_repo_mappings "${found_repos[@]}"
-    
+
     # Setup MySQL mapping
     MYSQL_MAPPING=$(setup_mysql_mapping)
 
@@ -353,7 +392,7 @@ else
             if [ "$repo_path" == "done" ]; then
                 break
             fi
-            
+
             if [ -d "$repo_path" ]; then
                 read -p "Enter target path in Docker container: " target_path
                 add_repo_mapping "$repo_path" "$target_path"
@@ -364,6 +403,10 @@ else
     fi
 fi
 
+
+
+
+###################### Create Dockerfile ######################
 # Create Dockerfile
 print_info "Creating Dockerfile..."
 cat > $PROJECT_DIR/Dockerfile << EOF
@@ -378,13 +421,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt-cache
 RUN mkdir -p /etc/apt/apt.conf.d/
-COPY configs/apt/02proxy /etc/apt/apt.conf.d/
+COPY configs/etc/apt/apt.conf.d/02proxy /etc/apt/apt.conf.d/
 
+# Setup rpios apt sources.list
 RUN mkdir -p /etc/apt/sources.list.d/
-COPY configs/raspi/raspi.list /etc/apt/sources.list.d/
+COPY configs/etc/apt/sources.list.d/raspi.list /etc/apt/sources.list.d/
 
+# Setup rpios apt repo keyring
 RUN mkdir -p /usr/share/keyrings/
-COPY configs/raspi/raspberrypi-archive-keyring.gpg /usr/share/keyrings/raspberrypi-archive-keyring.gpg
+COPY configs/usr/share/keyrings/raspberrypi-archive-keyring.gpg /usr/share/keyrings/raspberrypi-archive-keyring.gpg
 
 # Set locale
 RUN apt-get update && apt-get install -y locales && \\
@@ -417,7 +462,7 @@ RUN apt-get update && apt-get -y dist-upgrade && \\
 
 # Configure MySQL
 RUN mkdir -p /etc/mysql/conf.d/
-COPY configs/mysql/builder.cnf /etc/mysql/conf.d/
+COPY configs/etc/mysql/conf.d/builder.cnf /etc/mysql/conf.d/
 RUN mkdir -p /var/run/mysqld && \\
     chown mysql:mysql /var/run/mysqld
 
@@ -434,7 +479,8 @@ RUN mkdir -p $BUILDER_WORKDIR
 ### FIXME: This doesn't work because /var/lmce-build/... is not mounted during container creation. Need rethink on this.
 ### FIXME: It will always git clone (which is ok but prevents shared build scripts)
 # If LinuxMCE build-scripts are available symlink them, if not then clone the git repo.
-RUN if [ -d "/var/lmce-build/Ubuntu_Helpers_NoHardcode" ]; then   ln -s /var/lmce-build/Ubuntu_Helpers_NoHardcode /root/Ubuntu_Helpers_NoHardcode; echo "HELPERS SYMLINK MADE"; else   git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode; echo "GIT CLONE MADE"; fi;
+#RUN if [ -d "/var/lmce-build/Ubuntu_Helpers_NoHardcode" ]; then   ln -s /var/lmce-build/Ubuntu_Helpers_NoHardcode /root/Ubuntu_Helpers_NoHardcode; echo "HELPERS SYMLINK MADE"; else   git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode; echo "GIT CLONE MADE"; fi;
+RUN git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode
 
 # Install build helpers
 WORKDIR /root/Ubuntu_Helpers_NoHardcode
@@ -442,12 +488,22 @@ RUN chmod +x install.sh
 RUN ./install.sh
 
 # Copy builder custom configuration
-COPY configs/builder.custom.conf /etc/lmce-build/
+COPY configs/etc/lmce-build/builder.custom.conf /etc/lmce-build/
+
+# Backup the builder ssh key files
+RUN mkdir -p /root/ssh-key && \
+    cp /etc/lmce-build/builder.key /root/ssh-key && \
+    cp /etc/lmce-build/builder.key.pub /root/ssh-key
+
+# Backup the builder custom configuration file
+COPY configs/etc/lmce-build/builder.custom.conf /etc/lmce-build/
+RUN mkdir -p /root/config && \
+    cp /etc/lmce-build/builder.custom.conf /root/config/
 
 # Install all the build-required packages and libraries
 WORKDIR /usr/local/lmce-build
 RUN chmod +x prepare.sh
-RUN ./prepare.sh
+#RUN ./prepare.sh
 
 # Define entrypoint for running builds
 COPY entrypoint.sh /entrypoint.sh
@@ -457,7 +513,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 # Clean apt repositories and cache location
 RUN apt-get clean \\
     && rm -rf /var/lib/apt/lists/*
-RUN rm -f /etc/apt/apt.conf.d/02proxy
+#RUN rm -f /etc/apt/apt.conf.d/02proxy
 
 # Ensure shells start in the correct dir. Necessary because the shell resolves symlinks.
 RUN echo 'cd -L /usr/local/lmce-build' >> /root/.bashrc
@@ -468,8 +524,8 @@ EOF
 
 # Create MySQL configuration
 print_info "Creating MySQL configuration..."
-mkdir -p $PROJECT_DIR/configs/mysql
-cat > $PROJECT_DIR/configs/mysql/builder.cnf << 'EOF'
+mkdir -p $PROJECT_DIR/configs/etc/mysql/conf.d
+cat > $PROJECT_DIR/configs/etc/mysql/conf.d/builder.cnf << 'EOF'
 [mysqld]
 skip-networking
 innodb_flush_log_at_trx_commit = 2
@@ -477,23 +533,27 @@ EOF
 
 ## Create apt proxy file
 print_info "Creating APT proxy file..."
-mkdir -p $PROJECT_DIR/configs/apt/
-touch $PROJECT_DIR/configs/apt/02proxy
+mkdir -p $PROJECT_DIR/configs/etc/apt/apt.conf.d
+touch $PROJECT_DIR/configs/etc/apt/apt.conf.d/02proxy
 if [ -n "$APT_PROXY" ]; then
-	cat > $PROJECT_DIR/configs/apt/02proxy << EOF
+    cat > $PROJECT_DIR/configs/etc/apt/apt.conf.d/02proxy << EOF
 Acquire {
     HTTP::proxy "${APT_PROXY}";
 }
 EOF
 fi
 
+
+
+
+###################### Add RPIOS sources ######################
 add_raspi_repo() {
     local version="$1"
 
     local repo_url="http://archive.raspberrypi.org/debian/"
-    local repo_list="$PROJECT_DIR/configs/raspi/raspi.list"
+    local repo_list="$PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list"
     local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
-    local keyring_path="$PROJECT_DIR/configs/raspi/raspberrypi-archive-keyring.gpg"
+    local keyring_path="$PROJECT_DIR/configs/usr/share/keyrings//raspberrypi-archive-keyring.gpg"
     local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
 
     print_info "Installing Raspberry Pi GPG key..."
@@ -502,15 +562,22 @@ add_raspi_repo() {
     print_info "Adding APT source for '$distro' with version '$version'..."
     echo "deb [signed-by=$keyring_path_real] $repo_url $version main" | tee "$repo_list" > /dev/null
 }
-mkdir -p $PROJECT_DIR/configs/raspi
-touch $PROJECT_DIR/configs/raspi/raspi.list
-touch $PROJECT_DIR/configs/raspi/raspberrypi-archive-keyring.gpg
+mkdir -p $PROJECT_DIR/configs/etc/apt/sources.list.d
+mkdir -p $PROJECT_DIR/configs/usr/share/keyrings
+touch $PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list
+touch $PROJECT_DIR/configs/usr/share/keyrings/raspberrypi-archive-keyring.gpg
 #[ -n "$SOURCES" ] && add_raspi_repo $VERSION
 
+
+
+
+
+###################### Create LinuxMCE builder.custom.conf ######################
 # Create builder configuration
 print_info "Creating builder configuration..."
-touch $PROJECT_DIR/configs/builder.custom.conf
-cat > $PROJECT_DIR/configs/builder.custom.conf << EOF
+mkdir -p $PROJECT_DIR/configs/etc/lmce-build
+touch $PROJECT_DIR/configs/etc/lmce-build/builder.custom.conf
+cat > $PROJECT_DIR/configs/etc/lmce-build/builder.custom.conf << EOF
 # Build configuration for LinuxMCE
 # Generated on $(date)
 
@@ -565,6 +632,9 @@ DB_IMPORT="no"
 EOF
 
 
+
+
+###################### Create entrypoint script ######################
 # Create entrypoint script
 print_info "Creating entrypoint script..."
 cat > $PROJECT_DIR/entrypoint.sh << 'EOF'
@@ -574,6 +644,25 @@ cat > $PROJECT_DIR/entrypoint.sh << 'EOF'
 #
 
 set -e
+
+# The first time this runs (first start) the unique builder configs will be copied to the host volume.
+# Subsequent runs will copy the files from the host volume back to the temporary root locations.
+# This will ensure the updated copies are stored in case they are removed from the host volume.
+# The ssh-key is temporarily stored at /root/ssh-key/ during container creation.
+mkdir -p /var/lmce-build/builder-keys
+[[ ! -f "/var/lmce-build/builder-keys/builder.key" ]] && [[ -f "/root/ssh-key/builder.key" ]] && cp -a /root/ssh-key/* /var/lmce-build/builder-keys/
+cp -a /var/lmce-build/builder-keys/* /root/ssh-key/ || :
+
+# The builder.custom.conf is temporarily stored at /root/config/ during container creation.
+mkdir -p /var/lmce-build/config
+[[ ! -f "/var/lmce-build/config/builder.custom.conf" ]] && [[ -f "/root/config/builder.custom.conf" ]] && cp -a /root/config/* /var/lmce-build/config/
+cp -a /var/lmce-build/config/builder.custom.conf /root/config/ || :
+cp -a /var/lmce-build/config/builder.custom.conf /root/config/ || :
+
+# Create symbolic links from the builder config directory to the host volume files.
+ln -s /var/lmce-build/builder-keys/builder.key /etc/lmce-build/builder.key || :
+ln -s /var/lmce-build/builder-keys/builder.key.pub /etc/lmce-build/builder.key.pub || :
+ln -s /var/lmce-build/config/builder.custom.conf /etc/lmce-build/builder.custom.conf || :
 
 # If shell is specified, start a shell
 if [ "$1" = "shell" ]; then
@@ -596,6 +685,10 @@ exec "$@"
 EOF
 chmod +x $PROJECT_DIR/entrypoint.sh
 
+
+
+
+###################### Create docker-compose.yml ######################
 # Create docker-compose.yml with dynamic mappings
 print_info "Creating docker-compose.yml with mappings..."
 {
@@ -631,6 +724,10 @@ print_info "Creating docker-compose.yml with mappings..."
   echo "    tty: true"
 } > "$PROJECT_DIR/docker-compose.yml"
 
+
+
+
+###################### Create run.sh container control script ######################
 # Create run script
 print_info "Creating run script..."
 cat > $PROJECT_DIR/run.sh << EOF
@@ -701,11 +798,11 @@ case "\$1" in
         ;;
     --tail-log)
         print_info "Tailing /var/log/lmce-build.log in ${CONTAINER_NAME}..."
-        docker compose exec ${CONTAINER_NAME} tail -f /var/log/lmce-build.log
+        docker compose exec \${CONTAINER_NAME} tail -f /var/log/lmce-build.log
         ;;
     --top)
         print_info "Running top in ${CONTAINER_NAME}..."
-        docker compose exec ${CONTAINER_NAME} top
+        docker compose exec \${CONTAINER_NAME} top
         ;;
     --exec)
         shift
@@ -738,6 +835,10 @@ esac
 EOF
 chmod +x $PROJECT_DIR/run.sh
 
+
+
+
+###################### Create README.md ######################
 # Create README.md
 print_info "Creating README.md..."
 cat > $PROJECT_DIR/README.md << EOF
@@ -879,9 +980,10 @@ These additional operations are available through the main run script (\`run.sh\
 - \`--import-db\`: Import LinuxMCE databases from the build scripts.
 EOF
 
-# Create build directory
-mkdir -p $PROJECT_DIR/lmce-build
 
+
+
+###################### Final info for user - next steps ######################
 # Final steps
 print_success "Setup complete! Your LinuxMCE Docker build environment is ready."
 print_info "Project directory: $PROJECT_DIR"
