@@ -34,7 +34,7 @@ MYSQL_RUN="/run/mysqld"
 # OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="bionic"; ARCH="amd64"; BRANCH="$BRANCH";
 # OS="ubuntu"; VERSION="bionic"; ARCH="armhf"; BRANCH="$BRANCH";
-OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
 # OS="ubuntu"; VERSION="jammy"; ARCH="armhf"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
 # OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
 # OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented
@@ -490,12 +490,12 @@ RUN ./install.sh
 # Copy builder custom configuration
 COPY configs/etc/lmce-build/builder.custom.conf /etc/lmce-build/
 
-# Backup the builder ssh key files
+# Backup the builder ssh key files for sharing on the host volume
 RUN mkdir -p /root/ssh-key && \
     cp /etc/lmce-build/builder.key /root/ssh-key && \
     cp /etc/lmce-build/builder.key.pub /root/ssh-key
 
-# Backup the builder custom configuration file
+# Backup the builder custom configuration file for sharing on the host volume
 COPY configs/etc/lmce-build/builder.custom.conf /etc/lmce-build/
 RUN mkdir -p /root/config && \
     cp /etc/lmce-build/builder.custom.conf /root/config/
@@ -503,7 +503,7 @@ RUN mkdir -p /root/config && \
 # Install all the build-required packages and libraries
 WORKDIR /usr/local/lmce-build
 RUN chmod +x prepare.sh
-#RUN ./prepare.sh
+RUN ./prepare.sh
 
 # Define entrypoint for running builds
 COPY entrypoint.sh /entrypoint.sh
