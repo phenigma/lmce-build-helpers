@@ -125,7 +125,7 @@ done
 
 ###################### Set project name ######################
 PROJECT_NAME="linuxmce-$OS-$VERSION-$ARCH"
-[ -n "$SOURCES" ] && PROJECT_NAME="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios
+[ -n "$SOURCES" ] && PROJECT_NAME="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios)
 
 ###################### Check for root ######################
 # Check if running as root
@@ -581,6 +581,9 @@ cat > $PROJECT_DIR/configs/etc/lmce-build/builder.custom.conf << EOF
 # Build configuration for LinuxMCE
 # Generated on $(date)
 
+# Set the log file location to a location on the host
+log_file="/var/lmce-build/log/lmce-build.log"
+
 PROXY="${APT_PROXY}"
 SKIN_HOST=""
 MEDIA_HOST=""
@@ -648,6 +651,8 @@ set -e
 # The first time this runs (first start) the unique builder configs will be copied to the host volume.
 # Subsequent runs will copy the files from the host volume back to the temporary root locations.
 # This will ensure the updated copies are stored in case they are removed from the host volume.
+# Create the log directory
+mkdir -p /var/lmce-build/log
 # The ssh-key is temporarily stored at /root/ssh-key/ during container creation.
 mkdir -p /var/lmce-build/builder-keys
 [[ ! -f "/var/lmce-build/builder-keys/builder.key" ]] && [[ -f "/root/ssh-key/builder.key" ]] && cp -a /root/ssh-key/* /var/lmce-build/builder-keys/
