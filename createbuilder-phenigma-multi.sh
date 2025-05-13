@@ -30,22 +30,22 @@ PROXY="http://192.168.2.60:3142/"
 BRANCH=master
 #
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
-# FLAVOR="raspbian"; DISTRIBUTION="wheezy"; ARCH="armhf";
-# FLAVOR="raspbian"; DISTRIBUTION="jessie"; ARCH="armhf";
-# FLAVOR="raspbian"; DISTRIBUTION="stretch"; ARCH="armhf";
-# FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf";
+# FLAVOR="raspbian"; DISTRIBUTION="wheezy"; ARCH="armhf"; BRANCH="ubuntu-trusty";
+# FLAVOR="raspbian"; DISTRIBUTION="jessie"; ARCH="armhf"; BRANCH="ubuntu-trusty";
+# FLAVOR="raspbian"; DISTRIBUTION="stretch"; ARCH="armhf"; BRANCH="ubuntu-trusty";
+# FLAVOR="raspbian"; DISTRIBUTION="buster"; ARCH="armhf"; BRANCH="ubuntu-trusty";
 
 # ### Debian Builds ###
 # FLAVOR="debian"; DISTRIBUTION="bookworm"; ARCH="amd64"; ## Not implemented
 # FLAVOR="debian"; DISTRIBUTION="bookworm"; ARCH="armhf"; ## Not implemented
 
 # ## Ubuntu Builds ###
-# FLAVOR="ubuntu"; DISTRIBUTION="intrepid"; ARCH="i386";
-# FLAVOR="ubuntu"; DISTRIBUTION="lucid"; ARCH="i386";
-# FLAVOR="ubuntu"; DISTRIBUTION="precise"; ARCH="i386";
-# FLAVOR="ubuntu"; DISTRIBUTION="trusty"; ARCH="i386";
-# FLAVOR="ubuntu"; DISTRIBUTION="trusty"; ARCH="armhf";
-# FLAVOR="ubuntu"; DISTRIBUTION="trusty"; ARCH="amd64";
+# FLAVOR="ubuntu"; DISTRIBUTION="intrepid"; ARCH="i386"; BRANCH="ubuntu-trusty";
+# FLAVOR="ubuntu"; DISTRIBUTION="lucid"; ARCH="i386"; BRANCH="ubuntu-trusty";
+# FLAVOR="ubuntu"; DISTRIBUTION="precise"; ARCH="i386"; BRANCH="ubuntu-trusty";
+# FLAVOR="ubuntu"; DISTRIBUTION="trusty"; ARCH="i386"; BRANCH="ubuntu-trusty";
+# FLAVOR="ubuntu"; DISTRIBUTION="trusty"; ARCH="armhf"; BRANCH="ubuntu-trusty";
+# FLAVOR="ubuntu"; DISTRIBUTION="trusty"; ARCH="amd64"; BRANCH="ubuntu-trusty";
 # FLAVOR="ubuntu"; DISTRIBUTION="xenial"; ARCH="armhf";
 # FLAVOR="ubuntu"; DISTRIBUTION="xenial"; ARCH="i386";
 # FLAVOR="ubuntu"; DISTRIBUTION="xenial"; ARCH="amd64";
@@ -53,11 +53,11 @@ BRANCH=master
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="i386";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="amd64";
 # FLAVOR="ubuntu"; DISTRIBUTION="bionic"; ARCH="armhf";
-# FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; ## 2204 Needs tlc and DB updates
-# FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="armhf"; ## 2204 Needs tlc and DB updates
+# FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="amd64"; BRANCH="master"; ## 2204 Needs tlc and DB updates
+# FLAVOR="ubuntu"; DISTRIBUTION="jammy"; ARCH="armhf"; BRANCH="master"; ## 2204 Needs tlc and DB updates
 
-# FLAVOR="ubuntu"; DISTRIBUTION="noble"; ARCH="amd64"; ## 2404 Needs tlc and DB updates
-# FLAVOR="ubuntu"; DISTRIBUTION="noble"; ARCH="armhf"; ## 2404 Needs tlc and DB updates
+# FLAVOR="ubuntu"; DISTRIBUTION="noble"; ARCH="amd64"; BRANCH="master"; ## 2404 Needs tlc and DB updates
+# FLAVOR="ubuntu"; DISTRIBUTION="noble"; ARCH="armhf"; BRANCH="master"; ## 2404 Needs tlc and DB updates
 #
 
 #
@@ -78,7 +78,7 @@ COMMON_SKINS_AND_MEDIA_DIR="$COMMON_DIR_BASE/home/samba/www_docs"
 
 if [ -d "$ROOT_OF_BUILDER" ]; then
     echo "Directory already exists. Exiting."
-    exit 1
+#    exit 1
 fi
 
 [ ! -z "$PROXY" ] && echo exporting http_proxy="$PROXY"
@@ -116,7 +116,11 @@ case "${FLAVOR}" in
 		esac
 		;;
 	"raspbian")
-		MIRROR=http://archive.raspbian.org/raspbian/
+		# legacy for wheezy, jessie, and stretch
+		MIRROR=http://legacy.raspbian.org/raspbian/
+
+		# current for buster, bullseye, bookworm, and trixie (2025-05-11)
+		#MIRROR=http://raspbian.raspberrypi.org/raspbian/
 		;;
 esac
 
@@ -145,15 +149,17 @@ DEBIAN_FRONTEND=noninteractive apt-get -y install binfmt-support qemu-user-stati
 # Setup the new debootstrap environment
 mkdir -p "$ROOT_OF_BUILDER"
 
-# debootstrap was not arch aware on old builders < 2204 (jammy)
-#qemu-debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
-
-# debootstrap is arch aware now >= 2204 (jammy)
-debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
-
-# prepare the fstab to contain required mount information for the builder
-cat <<-EOF >>/etc/fstab
-
+if [ -f "$ROOT_OF_BUILDER/var/lib/dpkg/status" ] && grep -q "Package: base-files" "$ROOT_OF_BUILDER"/var/lib/dpkg/status; then
+	echo "Package database looks valid - debootstrap likely succeeded"
+else
+	# debootstrap was not arch aware on old builders < 2204 (jammy)
+	#qemu-debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
+	# debootstrap is arch aware now >= 2204 (jammy)
+	debootstrap --arch $ARCH $DISTRIBUTION $ROOT_OF_BUILDER $MIRROR
+fi
+# prepare the fstab to contain required mount information for the builder, if it's not already there.
+if ! grep -q "$ROOT_OF_BUILDER" /etc/fstab; then
+    cat <<-EOF >>/etc/fstab
 	# new builder at $ROOT_OF_BUILDER
 	/etc/resolv.conf $ROOT_OF_BUILDER/etc/resolv.conf 		none bind 0 0
 	/dev            $ROOT_OF_BUILDER/dev				none    bind
@@ -165,31 +171,32 @@ cat <<-EOF >>/etc/fstab
 	$COMMON_SKINS_AND_MEDIA_DIR  $ROOT_OF_BUILDER/home/samba/www_docs 	none bind
 	EOF
 
-# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
-#[ "${SHARED_SOURCE}" == "yes" ] && echo "$COMMON_SRC_DIR  $ROOT_OF_BUILDER/var/lmce-build/scm 		none bind" >> /etc/fstab
+	# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
+	#[ "${SHARED_SOURCE}" == "yes" ] && echo "$COMMON_SRC_DIR  $ROOT_OF_BUILDER/var/lmce-build/scm 		none bind" >> /etc/fstab
 
-# mount the required dirs for the builder
-mount $ROOT_OF_BUILDER/dev
-mount $ROOT_OF_BUILDER/proc
-mount $ROOT_OF_BUILDER/sys
-mount $ROOT_OF_BUILDER/dev/pts
+	# mount the required dirs for the builder
+	mount $ROOT_OF_BUILDER/dev
+	mount $ROOT_OF_BUILDER/proc
+	mount $ROOT_OF_BUILDER/sys
+	mount $ROOT_OF_BUILDER/dev/pts
 
-mkdir -p $ROOT_OF_BUILDER/run/mysqld
-mount $ROOT_OF_BUILDER/run/mysqld
+	mkdir -p $ROOT_OF_BUILDER/run/mysqld
+	mount $ROOT_OF_BUILDER/run/mysqld
 
-# Add shared mount point to the fstab for this builder
-cat <<-EOF >>/etc/fstab
-	#/mnt2		$ROOT_OF_BUILDER/mnt2				none    bind
-	EOF
-mkdir -p $ROOT_OF_BUILDER/mnt2
-#mount $ROOT_OF_BUILDER/mnt2
+	# Add shared mount point to the fstab for this builder
+	cat <<-EOF >>/etc/fstab
+		#/mnt2		$ROOT_OF_BUILDER/mnt2				none    bind
+		EOF
+	mkdir -p $ROOT_OF_BUILDER/mnt2
+	#mount $ROOT_OF_BUILDER/mnt2
 
-# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
-#[ "${SHARED_SOURCE}" = "yes" ] && mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
-#[ "${SHARED_SOURCE}" = "yes" ] && mount $ROOT_OF_BUILDER/var/lmce-build/scm
+	# Disabled - from testing a shared source tree across builders. DO NOT USE, BUILDS WILL FAIL.
+	#[ "${SHARED_SOURCE}" = "yes" ] && mkdir -p $ROOT_OF_BUILDER/var/lmce-build/scm
+	#[ "${SHARED_SOURCE}" = "yes" ] && mount $ROOT_OF_BUILDER/var/lmce-build/scm
 
-mkdir -p $ROOT_OF_BUILDER/home/samba/www_docs
-mount $ROOT_OF_BUILDER/home/samba/www_docs
+	mkdir -p $ROOT_OF_BUILDER/home/samba/www_docs
+	mount $ROOT_OF_BUILDER/home/samba/www_docs
+fi
 
 # Create the sources.list file for the builder
 case "${FLAVOR}" in
@@ -197,11 +204,11 @@ case "${FLAVOR}" in
 		cat <<-EOF >$ROOT_OF_BUILDER/etc/apt/sources.list
 			# Required Sources for the builder
 			deb     $MIRROR $DISTRIBUTION  main restricted universe multiverse
-			deb-src $MIRROR $DISTRIBUTION  main restricted universe
+			#deb-src $MIRROR $DISTRIBUTION  main restricted universe
 			deb     $MIRROR $DISTRIBUTION-updates  main restricted universe multiverse
-			deb-src $MIRROR $DISTRIBUTION-updates  main restricted universe
+			#deb-src $MIRROR $DISTRIBUTION-updates  main restricted universe
 			deb     $SECURITY_ADDRESS $DISTRIBUTION-security  main restricted universe
-			deb-src $SECURITY_ADDRESS $DISTRIBUTION-security  main restricted universe
+			#deb-src $SECURITY_ADDRESS $DISTRIBUTION-security  main restricted universe
 			#deb     $MIRROR $DISTRIBUTION-backports  main restricted universe multiverse
 
 			EOF
@@ -210,10 +217,27 @@ case "${FLAVOR}" in
 		cat <<-EOF >$ROOT_OF_BUILDER/etc/apt/sources.list
 			# Required Sources for the builder
 			deb     $MIRROR $DISTRIBUTION  main contrib non-free rpi
-			deb-src $MIRROR $DISTRIBUTION  main contrib non-free
-			deb http://archive.raspberrypi.org/debian/ $DISTRIBUTION main ui
+			#deb-src $MIRROR $DISTRIBUTION  main contrib non-free
+
 			EOF
-		;;
+
+			# FIXME: Need to add raspbian sources too
+			add_raspi_repo() {
+			    local version="$1"
+
+			    local repo_url="http://archive.raspberrypi.org/debian/"
+			    local repo_list="$ROOT_OF_BUILDER/etc/apt/sources.list.d/raspi.list"
+			    local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
+			    local keyring_path="$ROOT_OF_BUILDER/usr/share/keyrings//raspberrypi-archive-keyring.gpg"
+			    local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
+
+			    echo "Installing Raspberry Pi GPG key..."
+			    curl -fsSL "$key_url" | gpg --dearmor | tee "$keyring_path" > /dev/null
+
+			    echo "Adding APT source for '$distro' with version '$version'..."
+			    echo "deb [signed-by=$keyring_path_real] $repo_url $version main" | tee "$repo_list" > /dev/null
+			}
+		add_raspi_repo $DISTRIBUTION
 esac
 
 [ ! -z "$PROXY" ] && echo 'Acquire::http { Proxy "'$PROXY'"; };' > $ROOT_OF_BUILDER/etc/apt/apt.conf.d/02proxy
@@ -230,12 +254,6 @@ case "${FLAVOR}" in
 #			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
 #			;;
 #		"trusty")
-#			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
-#			;;
-#		"xenial")
-#			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
-#			;;
-#		"bionic")
 #			GIT="https://phenigma@git.linuxmce.org/linuxmce/buildscripts.git"
 #			;;
 #	esac
@@ -296,18 +314,18 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	# Update the system
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update
-	apt-get -y dist-upgrade
+	apt-get -y --force-yes dist-upgrade
 
 	# Install base packages required.
-	apt-get -y install $BASE_PACKAGES
+	apt-get -y --force-yes install $BASE_PACKAGES
 
 	## TODO: move git-lfs stuff to prepare-scripts
 	# Add the git-lfs repository and get git-lfs
-        if [ "$DISTRIBUTION" = "trusty" ]; then
+        if [ "$DISTRIBUTION" = "trusty" ] || [ "$DISTRIBUTION" = "jessie" ]; then
 		# Special conditions for trusty, get it direct from the releases
 		mkdir -p /root/git-lfs
 		pushd /root/git-lfs
-		wget https://github.com/git-lfs/git-lfs/releases/download/v2.12.1/git-lfs-linux-arm-v2.12.1.tar.gz
+		curl -OJL https://github.com/git-lfs/git-lfs/releases/download/v2.12.1/git-lfs-linux-arm-v2.12.1.tar.gz
 		tar -xvf git-lfs-linux-arm-v2.12.1.tar.gz
 		./install.sh
 		popd
@@ -323,8 +341,9 @@ cat <<-EOF >$ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 	sed 's/^[^#]*bind-address[[:space:]]*=.*$/#&\nskip-networking\ninnodb_flush_log_at_trx_commit = 2/' -i /etc/mysql/my.cnf | true
 	sed 's/^[^#]*bind-address[[:space:]]*=.*$/#&\nskip-networking\ninnodb_flush_log_at_trx_commit = 2/' -i /etc/mysql/mysql.conf.d/mysqld.cnf | true
 	cd /root
-	git clone "$GIT"
-	ln -s buildscripts Ubuntu_Helpers_NoHardcode
+	[[ ! -d Ubuntu_Helpers_NoHardcode/.git ]] && \
+	git clone "$GIT" Ubuntu_Helpers_NoHardcode
+	#ln -s buildscripts Ubuntu_Helpers_NoHardcode
 	cd Ubuntu_Helpers_NoHardcode
 
 	#
@@ -366,6 +385,7 @@ chmod +x $ROOT_OF_BUILDER/root/initialBuilderSetup.sh
 chroot $ROOT_OF_BUILDER /root/initialBuilderSetup.sh
 
 # Create initial configuration for the builder
+[[ ! -f "$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/builder.custom.conf" ]] && \
 cat <<-EOF >$ROOT_OF_BUILDER/root/Ubuntu_Helpers_NoHardcode/$CONF_FILES_DIR/builder.custom.conf
 	PROXY="$PROXY"
 	SKIN_HOST="$SKIN_HOST"
