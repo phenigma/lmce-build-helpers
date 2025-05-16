@@ -26,38 +26,44 @@ APT_PROXY="http://192.168.2.60:3142"
 # Set the runtime dir for mysql inside the container if using myql on HOST to share the DB.
 MYSQL_RUN="/run/mysqld"
 
+
+
+###################### Common builder configurations ######################
 # ## COMMON CONFIGURATIONS ##
 # ## Ubuntu Builds ###
-# OS="ubuntu"; VERSION="trusty"; ARCH="amd64"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="trusty"; ARCH="armhf"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="xenial"; ARCH="amd64"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="bionic"; ARCH="amd64"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="bionic"; ARCH="armhf"; BRANCH="$BRANCH";
-# OS="ubuntu"; VERSION="jammy"; ARCH="amd64"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="jammy"; ARCH="armhf"; BRANCH="$BRANCH";	## 2204 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="noble"; ARCH="amd64"; BRANCH="$BRANCH";	## Not implemented
-# OS="ubuntu"; VERSION="noble"; ARCH="armhf"; BRANCH="$BRANCH";	## Not implemented
+# OS="ubuntu"; VERSION="trusty"; ARCH="amd64"; BRANCH="ubuntu-trusty";	## 1404
+# OS="ubuntu"; VERSION="trusty"; ARCH="armhf"; BRANCH="ubuntu-trusty";	## 1404
+# OS="ubuntu"; VERSION="xenial"; ARCH="amd64"; BRANCH="ubuntu-trusty";	## 1604
+# OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="ubuntu-trusty";	## 1604
+# OS="ubuntu"; VERSION="bionic"; ARCH="amd64";	## 1804
+# OS="ubuntu"; VERSION="bionic"; ARCH="armhf";	## 1804
+# OS="ubuntu"; VERSION="jammy"; ARCH="amd64";	## 2204 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="jammy"; ARCH="armhf";	## 2204 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="noble"; ARCH="amd64";	## 2404 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="noble"; ARCH="arm64";   ## 2404 Needs tlc and DB updates
 
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
-# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
-# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
-# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
-# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="raspbian"; ## unsupported by docker
+# OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="raspbian";	## unsupported by docker
+# OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="raspbian";	## 32-bit arm
+# OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="raspbian";	## 32-bit arm
+# OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="rpios";	## 32-bit arm
+# OS="debian"; VERSION="buster"; ARCH="arm64"; BRANCH="ubuntu-trusty"; SOURCES="rpios";	## R10/2019 Not implemented
+# OS="debian"; VERSION="bookworm"; ARCH="arm64"; BRANCH="master"; SOURCES="rpios";	## R12/2023 Needs tlc and DB updates
 
 # ### Debian Builds ###
-# OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
-# OS="debian"; VERSION="bookworm"; ARCH="armhf"; BRANCH="$BRANCH"; SOURCES="rpios";	## Not implemented
+# OS="debian"; VERSION="bookworm"; ARCH="amd64"; BRANCH="master";	## R12/2023 Needs tlc and DB updates
+# OS="debian"; VERSION="bookworm"; ARCH="arm64"; BRANCH="master";	## R12/2023 Needs tlc and DB updates
 
 
-###################### Feedback functions ######################
+
+###################### User feedback functions ######################
 # Parse command line arguments
 function print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
     echo "  --headless           Run in headless mode without user prompts (default)"
     echo "  --interactive        Run in in interactive mode with user prompts for mounts (default)"
-    echo "  --project-dir DIR    Set the project directory (default: $HOME/linuxmce-docker)"
+    echo "  --base-dir DIR       Set the base directory where builders will be located (default: $HOME/linuxmce-docker)"
     echo "  --os NAME            Set the Operating System name (default: ubuntu)"
     echo "  --version VER        Set OS version for Docker image (default: $VERSION)"
     echo "  --arch ARCH          Set arch for Docker image (default: $ARCH)"
@@ -79,6 +85,8 @@ print_error() {
     echo -e "\e[1;31m[ERROR] $1\e[0m" >&2
 }
 
+
+
 ###################### Check cmdline options ######################
 # Parse command line options
 HEADLESS=true
@@ -92,8 +100,8 @@ while [[ $# -gt 0 ]]; do
             HEADLESS=false
             shift
             ;;
-        --project-dir)
-            PROJECT_DIR="$2"
+        --base-dir)
+            BASE_DIR="$2"
             shift 2
             ;;
         --os)
@@ -123,9 +131,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 
+
 ###################### Set project name ######################
 PROJECT_NAME="linuxmce-$OS-$VERSION-$ARCH"
 [ -n "$SOURCES" ] && PROJECT_NAME="${PROJECT_NAME}-${SOURCES}"  # Add identifier for variant (raspbian/rpios)
+
+
 
 ###################### Check for root ######################
 # Check if running as root
@@ -135,6 +146,8 @@ if [ "$(id -u)" -eq 0 ]; then
     exit 1
 fi
 
+
+
 ###################### Check for Debian ######################
 # Check for Debian
 if [ ! -f /etc/debian_version ]; then
@@ -142,11 +155,15 @@ if [ ! -f /etc/debian_version ]; then
     exit 1
 fi
 
+
+
 ###################### Check for required variables ######################
 if [[ -z "$ARCH" || -z "$OS" || -z "$VERSION" || -z "$BRANCH" ]]; then
-    echo "Usage: $0 <arch: amd64|i386|armhf> <os: ubuntu|debian> <version: bullseye|focal|...> <branch: master|trusty|...>"
+    echo "Usage: $0 <arch: amd64|i386|armhf|arm64> <os: ubuntu|debian> <version: bullseye|focal|...> <branch: master|ubunty-trusty|...>"
     exit 1
 fi
+
+
 
 ###################### Docker Arch mappings ######################
 # Mapping for Docker image platforms
@@ -154,6 +171,7 @@ case "$ARCH" in
   amd64)  PLATFORM="linux/amd64";;
   i386)   PLATFORM="linux/386";;
   armhf)  PLATFORM="linux/arm/v7";;
+  arm64)  PLATFORM="linux/arm64";;
   *) echo "Unsupported architecture: $ARCH"; exit 1;;
 esac
 
@@ -167,7 +185,8 @@ BUILDER_WORKDIR=${BUILDER_WORKDIR:-/var/lmce-build}
 BUILDER_BUILD_SCRIPTS=${BUILDER_BUILD_SCRIPTS:-/root/Ubuntu_Helpers_NoHardcode}
 
 # Project directory setup
-PROJECT_DIR=${PROJECT_DIR:-$HOME/$PROJECT_NAME}
+BASE_DIR=${BASE_DIR:-$HOME/linuxmce-docker}
+PROJECT_DIR="$BASE_DIR/$PROJECT_NAME"
 mkdir -p $PROJECT_DIR
 cd $PROJECT_DIR
 print_info "Project directory: $PROJECT_DIR"
@@ -175,7 +194,6 @@ print_info "Project directory: $PROJECT_DIR"
 # Create build directory
 mkdir -p $PROJECT_DIR/lmce-build
 print_info "Project build directory: $PROJECT_DIR/lmce_build"
-
 
 
 
@@ -230,6 +248,10 @@ if ! id -nG "$USER" | grep -qw "docker"; then
 	print_info "Added $USER to the docker group. You may need to log out and back in for this to take effect."
 fi
 
+# Pull raspbian base images from docker hub - jessie and stretch are available.
+if [ "$OS" = "raspbian" ]; then
+    docker pull ${OS}/${VERSION} 
+fi
 
 
 
@@ -405,12 +427,133 @@ fi
 
 
 
+###################### Add RPIOS sources ######################
+add_raspi_repo() {
+    local version="$1"
+
+    # Raspberry Pi OS Bookworm
+    # Rapsberry Pi arm64
+    # deb https://archive.raspberrypi.com/debian/ bookworm main untested
+    # Raspberry Pi armhf
+    # deb http://raspbian.raspberrypi.com/raspbian/ bookworm main contrib non-free rpi
+    if [ "$SOURCES" = "rpios" ]; then
+        if [ "$ARCH" = "arm64" ]; then
+	    # arm64 (64-bit modern)
+            local repo_url="http://archive.raspberrypi.org/debian/"
+            local components="main untested"
+        else
+	    # armhf (32-bit modern)
+            local repo_url="http://raspbian.raspberrypi.org/raspbian/"
+            local components="main contrib non-free rpi"
+        fi
+
+        local repo_list="$PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list"
+        local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
+        local keyring_path="$PROJECT_DIR/configs/usr/share/keyrings//raspberrypi-archive-keyring.gpg"
+        local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
+
+    elif [ "$SOURCES" = "raspbian" ]; then
+        # armhf (32-bit legacy)
+	local repo_url="http://legacy.raspbian.org/raspbian/"
+        local components="main contrib non-free rpi"
+
+        local repo_list="$PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list"
+        local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
+        local keyring_path="$PROJECT_DIR/configs/usr/share/keyrings//raspberrypi-archive-keyring.gpg"
+        local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
+    fi
+
+#    local repo_list="$PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list"
+#    local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
+#    local keyring_path="$PROJECT_DIR/configs/usr/share/keyrings//raspberrypi-archive-keyring.gpg"
+#    local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
+
+    print_info "Installing Raspberry Pi GPG key..."
+    curl -fsSL "$key_url" | gpg --dearmor | tee "$keyring_path" > /dev/null
+
+    print_info "Adding APT source for '$distro' with version '$version'..."
+    echo "deb [signed-by=$keyring_path_real] $repo_url $version main" | tee "$repo_list" > /dev/null
+}
+mkdir -p $PROJECT_DIR/configs/etc/apt/sources.list.d
+mkdir -p $PROJECT_DIR/configs/usr/share/keyrings
+touch $PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list
+touch $PROJECT_DIR/configs/usr/share/keyrings/raspberrypi-archive-keyring.gpg
+[ -n "$SOURCES" ] && add_raspi_repo $VERSION
+
+
+
+###################### Setup Dockerfile ######################
+# Create Dockerfile
+print_info "Creating Dockerfile..."
+
+# Deal with legacy RPI jessie base image - non-official - from docker hub
+FROMNAME="${OS}:${VERSION}"
+if [ "$SOURCES" = "raspbian" ]; then
+    FROMNAME="${OS}/${VERSION}"
+fi
+
+# If running legacy raspbian repo, remove the standard archive repo
+REMOVE_NON_LEGACY_REPO=""
+if [ "$SOURCES" = "raspbian" ]; then
+    REMOVE_NON_LEGACY_REPO="RUN find /etc/apt/ -type f -print0 | xargs -0 sed -i '/archive\.raspbian\.org/d'"
+fi
+
+if [ "$VERSION" = "trusty" ] || [ "$VERSION" = "jessie" ]; then
+    # Special conditions for legacy trusty and jessie, get it direct from the releases
+    GITLFS="mkdir -p /root/git-lfs && \
+            cd /root/git-lfs && \
+                curl -OJL https://github.com/git-lfs/git-lfs/releases/download/v2.12.1/git-lfs-linux-arm-v2.12.1.tar.gz && \
+                tar -xvf git-lfs-linux-arm-v2.12.1.tar.gz && \
+                ./install.sh"
+else
+    # Add the packagecloud repository to apt sources. - Ew, causing issues. :(
+    # curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
+    # curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+    GITLFS="apt-get -y install git-lfs"
+fi
+
+
+BASE_PACKAGES="aptitude openssh-client build-essential debhelper git lsb-release nano joe curl wget git dupload ccache screen"
+if [ "$OS" = "ubuntu" ]; then
+    BASE_PACKAGES+=" language-pack-en-base mysql-client mysql-server"
+elif [ "$OS" = "raspbian" ]; then
+    BASE_PACKAGES+=" mariadb-client-10.0"
+elif [ "$OS" = "debian" ]; then
+    BASE_PACKAGES+=" mariadb-client-10.0"
+fi
+#    wget \\
+#    curl \\
+#    build-essential \\
+#    debhelper \\
+#    linux-headers-generic \\
+#    language-pack-en-base \\
+#    aptitude \\
+#    openssh-client \\
+#    mysql-server \\
+#    git \\
+#    autotools-dev \\
+#    libgtk2.0-dev \\
+#    libvte-dev \\
+#    dupload \\
+#    nano \\
+#    joe \\
+#    g++ \\
+#    ccache \\
+#    lsb-release \\
+#    screen
+
+# If shared mysql database then Remove mysql-server from build-packages - requires shared database!!
+SHARED_MYSQL_REMOVE_SERVER=""
+if [ -n "$MYSQL_RUN" ]; then
+    SHARED_MYSQL_REMOVE_SERVER="RUN sed -i '/mysql-server/d' /etc/lmce-build/build-packages || :"
+fi
+
+
 
 ###################### Create Dockerfile ######################
 # Create Dockerfile
-print_info "Creating Dockerfile..."
 cat > $PROJECT_DIR/Dockerfile << EOF
-FROM ${OS}:${VERSION}
+FROM ${FROMNAME}
 
 LABEL maintainer="LinuxMCE Community"
 LABEL description="LinuxMCE Build Environment"
@@ -431,6 +574,8 @@ COPY configs/etc/apt/sources.list.d/raspi.list /etc/apt/sources.list.d/
 RUN mkdir -p /usr/share/keyrings/
 COPY configs/usr/share/keyrings/raspberrypi-archive-keyring.gpg /usr/share/keyrings/raspberrypi-archive-keyring.gpg
 
+$REMOVE_NON_LEGACY_REPO
+
 # Set locale
 RUN apt-get update && apt-get install -y locales && \\
     localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
@@ -438,54 +583,41 @@ ENV LANG en_US.UTF-8
 ENV LC_ALL C
 
 # Install necessary packages
-RUN apt-get update && apt-get -y dist-upgrade && \\
-    apt-get install -y \\
-    wget \\
-    build-essential \\
-    debhelper \\
-    linux-headers-generic \\
-    language-pack-en-base \\
-    aptitude \\
-    openssh-client \\
-    mysql-server \\
-    git \\
-    autotools-dev \\
-    libgtk2.0-dev \\
-    libvte-dev \\
-    dupload \\
-    nano \\
-    joe \\
-    g++ \\
-    ccache \\
-    lsb-release \\
-    screen
+RUN apt-get -y dist-upgrade
+RUN apt-get install -y $BASE_PACKAGES
+
+# Grab the git-lfs repository
+#RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+#RUN apt-get install -y git-lfs
+RUN $GITLFS
 
 # Configure MySQL
 RUN mkdir -p /etc/mysql/conf.d/
 COPY configs/etc/mysql/conf.d/builder.cnf /etc/mysql/conf.d/
+# NOTE: This won't work if the mysql-server is not installed. Make this conditional somehow?
 RUN mkdir -p /var/run/mysqld && \\
-    chown mysql:mysql /var/run/mysqld
+    chown mysql:mysql /var/run/mysqld || :
 
 # Set up working directory
 WORKDIR /root
 
-# Define volume for build outputs
-VOLUME ["$BUILDER_WORKDIR"]
+# REMOVE: This is done in the docker-compose.yml file.
+# Create directory for build outputs
+#VOLUME ["$BUILDER_WORKDIR"]
 # Set up build directories
 RUN mkdir -p $BUILDER_WORKDIR
 #WORKDIR /var/lmce-build
 
-
-### FIXME: This doesn't work because /var/lmce-build/... is not mounted during container creation. Need rethink on this.
-### FIXME: It will always git clone (which is ok but prevents shared build scripts)
-# If LinuxMCE build-scripts are available symlink them, if not then clone the git repo.
-#RUN if [ -d "/var/lmce-build/Ubuntu_Helpers_NoHardcode" ]; then   ln -s /var/lmce-build/Ubuntu_Helpers_NoHardcode /root/Ubuntu_Helpers_NoHardcode; echo "HELPERS SYMLINK MADE"; else   git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode; echo "GIT CLONE MADE"; fi;
+# Clone the LinuxMCE buildscripts repository.
 RUN git clone https://github.com/linuxmce/buildscripts.git Ubuntu_Helpers_NoHardcode
 
 # Install build helpers
 WORKDIR /root/Ubuntu_Helpers_NoHardcode
 RUN chmod +x install.sh
 RUN ./install.sh
+
+# If present this will remove mysql-server from build-packages - requires shared database!!
+$SHARED_MYSQL_REMOVE_SERVER
 
 # Copy builder custom configuration
 COPY configs/etc/lmce-build/builder.custom.conf /etc/lmce-build/
@@ -522,6 +654,9 @@ RUN echo 'cd -L /usr/local/lmce-build' >> /root/.bashrc
 CMD ["shell"]
 EOF
 
+
+
+###################### Create MySQL configuration ######################
 # Create MySQL configuration
 print_info "Creating MySQL configuration..."
 mkdir -p $PROJECT_DIR/configs/etc/mysql/conf.d
@@ -531,6 +666,9 @@ skip-networking
 innodb_flush_log_at_trx_commit = 2
 EOF
 
+
+
+###################### Create APT proxy file ######################
 ## Create apt proxy file
 print_info "Creating APT proxy file..."
 mkdir -p $PROJECT_DIR/configs/etc/apt/apt.conf.d
@@ -542,33 +680,6 @@ Acquire {
 }
 EOF
 fi
-
-
-
-
-###################### Add RPIOS sources ######################
-add_raspi_repo() {
-    local version="$1"
-
-    local repo_url="http://archive.raspberrypi.org/debian/"
-    local repo_list="$PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list"
-    local key_url="https://archive.raspberrypi.org/debian/raspberrypi.gpg.key"
-    local keyring_path="$PROJECT_DIR/configs/usr/share/keyrings//raspberrypi-archive-keyring.gpg"
-    local keyring_path_real="/usr/share/keyrings/raspberrypi-archive-keyring.gpg"
-
-    print_info "Installing Raspberry Pi GPG key..."
-    curl -fsSL "$key_url" | gpg --dearmor | tee "$keyring_path" > /dev/null
-
-    print_info "Adding APT source for '$distro' with version '$version'..."
-    echo "deb [signed-by=$keyring_path_real] $repo_url $version main" | tee "$repo_list" > /dev/null
-}
-mkdir -p $PROJECT_DIR/configs/etc/apt/sources.list.d
-mkdir -p $PROJECT_DIR/configs/usr/share/keyrings
-touch $PROJECT_DIR/configs/etc/apt/sources.list.d/raspi.list
-touch $PROJECT_DIR/configs/usr/share/keyrings/raspberrypi-archive-keyring.gpg
-#[ -n "$SOURCES" ] && add_raspi_repo $VERSION
-
-
 
 
 
@@ -632,6 +743,10 @@ DB_IMPORT="no"
 
 # Only DB dump and import the pluto_main_build database. Enable this if the build database changed but no other databases have changes.
 #IMPORT_BUILD_DB_ONLY="true"
+
+# Uncomment to skip the packaging phase of MakeRelease, useful for compile testing.
+#skip_packaging="true"
+
 EOF
 
 
@@ -961,17 +1076,21 @@ REPOS="\$HOME/LinuxMCE,\$HOME/linuxmce-core" MYSQL_DIR="/var/lib/mysql" ./linuxm
 
 \`\`\`
 ${PROJECT_DIR}/
-├── run.sh                 # Main run script
-├── Dockerfile             # Docker image definition
-├── docker-compose.yml     # Docker Compose configuration with mappings
-├── entrypoint.sh          # Container entrypoint script
+├── run.sh				# Main run script
+├── Dockerfile				# Docker image definition
+├── docker-compose.yml			# Docker Compose configuration with mappings
+├── entrypoint.sh			# Container entrypoint script
 ├── configs
-│   └── apt/               # apt proxy information
-│       └── 02proxy
-│   └── mysql/             # MySQL configuration
-│       └── builder.cnf
-│   └── builder.custom.conf	# Custom LinuxMCE builder configuration file
-└── lmce-build/            # Build directory
+│   └── etc/
+│       ├── apt/
+│       │   └── 02proxy			# apt proxy information
+│       │
+│       ├── mysql/
+│       │   └── conf.d
+│       │       └── builder.cnf		# MySQL configuration
+│       └── lmce-build			# Custom LinuxMCE builder configuration file
+│           └── builder.custom.comf	# Custom LinuxMCE builder configuration file
+└── lmce-build/				# Build directory (mounted at /var/lmce-build/ within the container)
 \`\`\`
 
 ## Additional Build Script Options
