@@ -693,7 +693,8 @@ cat > $PROJECT_DIR/configs/etc/lmce-build/builder.custom.conf << EOF
 # Generated on $(date)
 
 # Set the log file location to a location on the host
-log_file="/var/lmce-build/log/lmce-build.log"
+log_file="$build_dir/log/lmce-build.log"
+local_mirror_dir="$build_dir/www"
 
 PROXY="${APT_PROXY}"
 SKIN_HOST=""
