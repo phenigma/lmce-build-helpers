@@ -26,7 +26,7 @@ REPOS="$lmce_svn,$ubuntu_lmce,$ubuntu_repo"     # 8,24,25 ubuntu/lmce/svn
 
 ## TODO: Make this select DISTINCT/UNIQUE Packages?, then seperate package loop to detect multiple package sources.
 # All compatible packages
-Q="SELECT PK_Package, Description, FK_Package_SourceCode, IsSource, FK_Distro, FK_OperatingSystem FROM Package AS A 
+Q="SELECT DISTINCT PK_Package, Description, FK_Package_SourceCode, IsSource, FK_Distro, FK_OperatingSystem FROM Package AS A 
 	INNER JOIN Package_Compat AS B ON B.FK_Package=PK_Package 
 	INNER JOIN Package_Source AS C ON C.FK_Package=PK_Package 
 	WHERE FK_RepositorySource IN ($REPOS) AND ((B.FK_OperatingSystem=$OS AND B.FK_Distro IS NULL) OR B.FK_Distro=$OLD_DISTRO)"
