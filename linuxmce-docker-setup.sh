@@ -14,7 +14,7 @@ HOST_GID=$(id -g)
 
 # Default config values
 OS="ubuntu"
-VERSION="jammy"
+VERSION="noble"
 ARCH="amd64"
 
 # Set the default git branch to checkout/build.
@@ -693,8 +693,8 @@ cat > $PROJECT_DIR/configs/etc/lmce-build/builder.custom.conf << EOF
 # Generated on $(date)
 
 # Set the log file location to a location on the host
-log_file="$build_dir/log/lmce-build.log"
-local_mirror_dir="$build_dir/www"
+log_file="\$build_dir/log/lmce-build.log"
+local_mirror_dir="\$build_dir/www"
 
 PROXY="${APT_PROXY}"
 SKIN_HOST=""
