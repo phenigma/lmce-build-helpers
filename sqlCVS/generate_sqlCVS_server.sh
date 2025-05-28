@@ -1,5 +1,9 @@
 #!/bin/bash
 
+
+################ Note: for some reason the local sqlCVS servers connect to 'dcerouter' rather than 'localhost'
+################ Need to add to /etc/hosts in the container "127.0.0.1       dcerouter"
+
 basedir=${basedir:-builders}
 container_name="sqlcvs-server"
 container_dir="$HOME/$basedir/$container_name"
@@ -22,7 +26,7 @@ RUN apt update && \
     apt install -y nano apache2 php5 php5-mysql php5-gd libapache2-mod-php5 libapache2-mod-auth-mysql mysql-server screen git
 
 # Adminer
-RUN ln -s /usr/share/adminer/adminer /var/www/html/adminer.php
+RUN ln -s /usr/share/adminer/adminer /var/www/html/adminer/
 
 # Clone sqlCVSweb
 RUN git clone https://github.com/linuxmce/sqlCVSweb.git /var/www/html/sqlCVS
@@ -100,18 +104,28 @@ if [ "$initialized" = true ]; then
 
   log "Creating MySQL user 'websqlcvs' with remote access"
   mysql -e "CREATE USER 'websqlcvs'@'localhost' IDENTIFIED BY 'lmc3R0ckz';" || :
-
   log "Granting privileges on all pluto_* databases to user 'websqlcvs'"
   mysql -e "GRANT ALL PRIVILEGES ON pluto_%.* TO 'websqlcvs'@'localhost';" || :
-
   log "Granting privileges on MasterUsers database to user 'websqlcvs'"
   mysql -e "GRANT ALL PRIVILEGES ON MasterUsers.* TO 'websqlcvs'@'localhost';" || :
-
   log "Granting privileges on main_sqlcvs_utf8 database to user 'websqlcvs'"
   mysql -e "GRANT ALL PRIVILEGES ON main_sqlcvs_utf8.* TO 'websqlcvs'@'localhost';" || :
-
   log "Applying privilege changes by flushing privileges"
   mysql -e "FLUSH PRIVILEGES;"
+
+## Need to setup the builder user for mysqldumps
+#CREATE USER 'builder'@'%' IDENTIFIED BY '';
+#update user set plugin="mysql_native_password" where User="builder";
+#GRANT SELECT, LOCK TABLES ON main_sqlcvs_utf8.* TO 'builder'@'%';
+#GRANT SELECT, LOCK TABLES ON main_sqlcvs.* TO 'builder'@'%';
+#GRANT SELECT, LOCK TABLES ON myth_sqlcvs.* TO 'builder'@'%';
+
+#GRANT SELECT, LOCK TABLES ON pluto_main.* TO 'builder'@'%';
+#GRANT SELECT, LOCK TABLES ON pluto_media.* TO 'builder'@'%';
+#GRANT SELECT, LOCK TABLES ON pluto_telecom.* TO 'builder'@'%';
+#GRANT SELECT, LOCK TABLES ON pluto_security.* TO 'builder'@'%';
+
+
 
   log "MySQL user setup complete. Remote access enabled."
 fi
