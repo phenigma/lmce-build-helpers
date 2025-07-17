@@ -21,7 +21,7 @@ ARCH="amd64"
 BRANCH="master"
 
 # Uncomment to use an apt-proxy inside the container
-APT_PROXY="http://192.168.2.60:3142"
+#APT_PROXY="http://192.168.2.60:3142"
 
 # Set the runtime dir for mysql inside the container if using myql on HOST to share the DB.
 MYSQL_RUN="/run/mysqld"
@@ -37,17 +37,14 @@ MYSQL_RUN="/run/mysqld"
 # OS="ubuntu"; VERSION="xenial"; ARCH="armhf"; BRANCH="ubuntu-trusty";	## 1604
 # OS="ubuntu"; VERSION="bionic"; ARCH="amd64";	## 1804
 # OS="ubuntu"; VERSION="bionic"; ARCH="armhf";	## 1804
-# OS="ubuntu"; VERSION="jammy"; ARCH="amd64";	## 2204 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="jammy"; ARCH="armhf";	## 2204 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="noble"; ARCH="amd64";	## 2404 Needs tlc and DB updates
-# OS="ubuntu"; VERSION="noble"; ARCH="arm64";   ## 2404 Needs tlc and DB updates
+# OS="ubuntu"; VERSION="noble"; ARCH="amd64";
+# OS="ubuntu"; VERSION="noble"; ARCH="arm64";
 
 # ### RPI Builds - raspbian until buster, debian from bookworm on ###
 # OS="raspbian"; VERSION="wheezy"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="raspbian";	## unsupported by docker
 # OS="raspbian"; VERSION="jessie"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="raspbian";	## 32-bit arm
 # OS="raspbian"; VERSION="stretch"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="raspbian";	## 32-bit arm
 # OS="raspbian"; VERSION="buster"; ARCH="armhf"; BRANCH="ubuntu-trusty"; SOURCES="rpios";	## 32-bit arm
-# OS="debian"; VERSION="buster"; ARCH="arm64"; BRANCH="ubuntu-trusty"; SOURCES="rpios";	## R10/2019 Not implemented
 # OS="debian"; VERSION="bookworm"; ARCH="arm64"; BRANCH="master"; SOURCES="rpios";	## R12/2023 Needs tlc and DB updates
 
 # ### Debian Builds ###
@@ -69,7 +66,15 @@ function print_usage() {
     echo "  --arch ARCH          Set arch for Docker image (default: $ARCH)"
     echo "  --sources NAME       Add additional source locations (defult: N/A, optional: raspbian|rpios)"
     echo "  --help               Show this help message"
-    exit 1
+    echo ""
+    echo " This script will check for directories named 'LinuxMCE' and 'Ubuntu_Helpers_NoHardcode' in $HOME"
+    echo " If found they will be checked for the lmce git repo, and if found it will be used as a shared"
+    echo " copy of the build scripts. Multiple docker based builders will share this set of build scripts."
+    echo ""
+    echo " Specifying --sources allows choosing the old raspbian sources, or the new native debian rpios."
+    echo " Note: This is for RPI builds only, other arm builds should not use this option."
+
+   exit 1
 }
 
 # Print colored messages
@@ -736,17 +741,20 @@ no_clean_scm="true"
 cache_replacements="true"
 
 # Uncomment to disable packaging "_all" .debs (avwiz sounds, install wizard videos, etc.)
-BUILD_ALL_PKGS="no"
+#BUILD_ALL_PKGS="no"
 
 # Skip DB dump and import. Comment this if any databases have changed.
 # Uncommenting will prevent ALL DB dump and import, including the pluto_main_build database.
-DB_IMPORT="no"
+#DB_IMPORT="no"
 
 # Only DB dump and import the pluto_main_build database. Enable this if the build database changed but no other databases have changes.
 #IMPORT_BUILD_DB_ONLY="true"
 
 # Uncomment to skip the packaging phase of MakeRelease, useful for compile testing.
 #skip_packaging="true"
+
+# Uncomment to make dummy packages for REQUIRED packages that are not building (install testing without DB foobar)
+MAKE_DUMMY_INSTALL_PKGS="yes"
 
 EOF
 
@@ -895,7 +903,7 @@ case "\$1" in
         ;;
     --mysql-start)
         print_info "Starting MySQL service in the container..."
-        docker compose exec \${CONTAINER_NAME} mysql-start
+        docker compose exec \${CONTAINER_NAME} service mysql start
         ;;
     --prepare)
         print_info "Running prepare scripts..."
@@ -940,9 +948,9 @@ case "\$1" in
         echo "  --start         	Start the Docker container"
         echo "  --stop          	Stop the Docker container"
         echo "  --shell         	Open a shell in the running container"
-        echo "  --mysql-start   	Start the MySQL service in the container"
-        echo "  --prepare       	Run the LinuxMCE prepare scripts (/usr/local/lmce-build/prepare.sh) [not persistent, use --build instead for permanent setup]"
-        echo "  --build-full    	Run a LinuxMCE full build scripts (/usr/local/lmce-build/build.sh)"
+        echo "  --mysql-start   	Start the MySQL service in the container (service mysql start)"
+        echo "  --prepare       	Run the LinuxMCE prepare scripts (/usr/local/lmce-build/prepare.sh) [not persistent, redo --build instead for permanent setup]"
+        echo "  --build-all	    	Run a LinuxMCE full build (/usr/local/lmce-build/build.sh)"
         echo "  --build-pkg #,# 	Run a LinuxMCE build from list of pkgs (/usr/local/lmce-build/release-pkg.sh)"
         echo "  --build-replacements	Run a LinuxMCE build of Replacements only (/usr/local/lmce-build/build-scripts/build-replacements.sh)"
         echo "  --import-db     	Run a LinuxMCE database import (/usr/local/lmce-build/build-scripts/import-databases.sh)"
@@ -1099,7 +1107,7 @@ ${PROJECT_DIR}/
 These additional operations are available through the main run script (\`run.sh\`):
 
 - \`--prepare\`: Run LinuxMCE prepare scripts. Note: This setup is temporary and lost when the container is stopped. Use \`--build\` to bake it into the image.
-- \`--build-full\`: Run the full build script for LinuxMCE inside the container.
+- \`--build-all\`: Run the full build script for LinuxMCE inside the container.
 - \`--build-pkg\`: Run a LinuxMCE build using a supplied list of packages.
 - \`--build-replacements\`: Build only the Replacements set of LinuxMCE packages.
 - \`--import-db\`: Import LinuxMCE databases from the build scripts.
